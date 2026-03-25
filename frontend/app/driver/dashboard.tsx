@@ -69,6 +69,9 @@ export default function DriverDashboardScreen() {
   
   // Incoming request
   const [incomingRequest, setIncomingRequest] = useState<CurrentTrip | null>(null);
+  
+  // Notification state
+  const [showNewBookingNotification, setShowNewBookingNotification] = useState(false);
 
   const driverId = user?.driver_id || '';
   const driverName = user?.personal_details?.full_name || user?.name || 'Driver';
@@ -76,21 +79,70 @@ export default function DriverDashboardScreen() {
   const vehicleNumber = user?.vehicle_details?.vehicle_number || user?.vehicle_number || '';
 
   useEffect(() => {
-    fetchDriverData();
-  }, []);
+    if (driverId) {
+      fetchDriverData();
+    }
+  }, [driverId]);
 
-  // Polling for incoming requests when duty is on
+  // Polling for updates when duty is on - every 5 seconds
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (dutyOn && tripStatus === 'none' && walletBalance >= 1000) {
+    if (dutyOn && walletBalance >= 1000 && driverId) {
       interval = setInterval(() => {
-        checkForIncomingRequests();
+        pollForUpdates();
       }, 5000); // Poll every 5 seconds
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [dutyOn, tripStatus, walletBalance]);
+  }, [dutyOn, walletBalance, driverId, tripStatus]);
+
+  // Poll for updates (incoming requests, wallet, queue)
+  const pollForUpdates = async () => {
+    try {
+      // Check for incoming requests
+      const ridesRes = await getDriverRides(driverId);
+      const rides = ridesRes.data.rides || [];
+      
+      const requestedTrip = rides.find((r: any) => r.status === 'requested');
+      const acceptedTrip = rides.find((r: any) => r.status === 'accepted');
+      const ongoingTrip = rides.find((r: any) => r.status === 'ongoing');
+
+      // Update trip status based on current rides
+      if (ongoingTrip) {
+        setCurrentTrip(ongoingTrip);
+        setTripStatus('ongoing');
+        setIncomingRequest(null);
+      } else if (acceptedTrip) {
+        setCurrentTrip(acceptedTrip);
+        setTripStatus('accepted');
+        setIncomingRequest(null);
+      } else if (requestedTrip) {
+        // New booking notification
+        if (!incomingRequest || incomingRequest.booking_id !== requestedTrip.booking_id) {
+          setShowNewBookingNotification(true);
+          setTimeout(() => setShowNewBookingNotification(false), 3000);
+        }
+        setIncomingRequest(requestedTrip);
+        setTripStatus('assigned');
+        setCurrentTrip(null);
+      } else {
+        setTripStatus('none');
+        setIncomingRequest(null);
+        setCurrentTrip(null);
+      }
+
+      // Refresh wallet balance
+      const walletRes = await getWallet(driverId);
+      setWalletBalance(walletRes.data.wallet.balance || 0);
+
+      // Refresh queue status
+      const queueRes = await getQueueStatus(driverId);
+      setQueueStatus(queueRes.data);
+    } catch (error) {
+      console.error('Poll update error:', error);
+    }
+  };
 
   const fetchDriverData = async () => {
     try {
@@ -132,26 +184,12 @@ export default function DriverDashboardScreen() {
     }
   };
 
-  const checkForIncomingRequests = async () => {
-    try {
-      const ridesRes = await getDriverRides(driverId);
-      const rides = ridesRes.data.rides || [];
-      const requestedTrip = rides.find((r: any) => r.status === 'requested');
-      
-      if (requestedTrip && !incomingRequest) {
-        setIncomingRequest(requestedTrip);
-        setTripStatus('assigned');
-      }
-    } catch (error) {
-      console.error('Failed to check incoming requests:', error);
-    }
-  };
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchDriverData();
+    await pollForUpdates();
     setRefreshing(false);
-  }, []);
+  }, [driverId]);
 
   const handleDutyToggle = async (value: boolean) => {
     if (walletBalance < 1000 && value) {
@@ -369,6 +407,14 @@ export default function DriverDashboardScreen() {
 
   return (
     <View style={styles.container}>
+      {/* New Booking Notification Banner */}
+      {showNewBookingNotification && (
+        <View style={styles.notificationBanner}>
+          <Ionicons name="notifications" size={20} color={Colors.white} />
+          <Text style={styles.notificationText}>New Booking Request!</Text>
+        </View>
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -1106,5 +1152,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  notificationBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.success,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingTop: 50,
+    zIndex: 1000,
+    gap: 8,
+  },
+  notificationText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

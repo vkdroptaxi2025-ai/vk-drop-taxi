@@ -1041,6 +1041,12 @@ async def create_smart_booking(booking: SmartBookingCreate):
         selected_driver = await db.drivers.find_one({"driver_id": booking.manual_driver_id})
         if not selected_driver:
             raise HTTPException(status_code=404, detail="Driver not found")
+        
+        # Check wallet balance for manual assignment too
+        wallet = await db.wallets.find_one({"user_id": booking.manual_driver_id})
+        wallet_balance = wallet.get('balance', 0) if wallet else 0
+        if wallet_balance < 1000:
+            raise HTTPException(status_code=400, detail=f"Driver wallet balance ({wallet_balance}) is below minimum ₹1000")
     else:
         # Auto assignment with smart matching
         # Get all approved, online, duty-on drivers
