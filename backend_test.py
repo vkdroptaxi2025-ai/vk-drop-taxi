@@ -1,1054 +1,597 @@
 #!/usr/bin/env python3
 """
-VK Drop Taxi Backend API Testing Suite
-Tests all backend APIs for the taxi booking application
+VK Drop Taxi Backend Testing - Edge Cases & Wallet Restrictions
+Focus on critical dispatch system testing as per review request
 """
 
 import requests
 import json
-import uuid
-from datetime import datetime
-import os
+import time
+from datetime import datetime, date, timedelta
 
-# Get backend URL from frontend env
+# Backend URL from environment
 BACKEND_URL = "https://ride-dispatch-app.preview.emergentagent.com/api"
+MOCK_OTP = "123456"
 
 class VKDropTaxiTester:
     def __init__(self):
         self.base_url = BACKEND_URL
-        self.session = requests.Session()
-        self.test_data = {}
-        self.results = []
-        
-    def log_result(self, test_name, success, details="", response_data=None):
-        """Log test result"""
+        self.test_results = []
+        self.created_entities = {
+            'drivers': [],
+            'customers': [],
+            'bookings': []
+        }
+    
+    def log_test(self, test_name, success, details="", error=""):
+        """Log test results"""
         result = {
-            "test": test_name,
-            "success": success,
-            "details": details,
-            "response_data": response_data,
-            "timestamp": datetime.now().isoformat()
+            'test': test_name,
+            'success': success,
+            'details': details,
+            'error': error,
+            'timestamp': datetime.now().isoformat()
         }
-        self.results.append(result)
+        self.test_results.append(result)
         status = "✅ PASS" if success else "❌ FAIL"
-        print(f"{status} {test_name}: {details}")
-        if response_data and not success:
-            print(f"   Response: {response_data}")
+        print(f"{status}: {test_name}")
+        if details:
+            print(f"   Details: {details}")
+        if error:
+            print(f"   Error: {error}")
+        print()
     
-    def test_auth_apis(self):
-        """Test authentication APIs"""
-        print("\n=== Testing Auth APIs ===")
-        
-        # Test 1: Send OTP for customer
+    def make_request(self, method, endpoint, data=None):
+        """Make HTTP request with error handling"""
+        url = f"{self.base_url}{endpoint}"
         try:
-            response = self.session.post(f"{self.base_url}/auth/send-otp", 
-                json={"phone": "+919876543210", "role": "customer"})
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("otp_mock") == "123456":
-                    self.log_result("Send OTP (Customer)", True, "Mock OTP 123456 returned")
-                else:
-                    self.log_result("Send OTP (Customer)", False, "Invalid response format", data)
+            if method == "GET":
+                response = requests.get(url, timeout=30)
+            elif method == "POST":
+                response = requests.post(url, json=data, timeout=30)
+            elif method == "PUT":
+                response = requests.put(url, json=data, timeout=30)
             else:
-                self.log_result("Send OTP (Customer)", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Send OTP (Customer)", False, f"Exception: {str(e)}")
-        
-        # Test 2: Send OTP for driver
-        try:
-            response = self.session.post(f"{self.base_url}/auth/send-otp", 
-                json={"phone": "+919876543211", "role": "driver"})
+                raise ValueError(f"Unsupported method: {method}")
             
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("otp_mock") == "123456":
-                    self.log_result("Send OTP (Driver)", True, "Mock OTP 123456 returned")
-                else:
-                    self.log_result("Send OTP (Driver)", False, "Invalid response format", data)
-            else:
-                self.log_result("Send OTP (Driver)", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Send OTP (Driver)", False, f"Exception: {str(e)}")
-        
-        # Test 3: Verify OTP for new customer
-        try:
-            response = self.session.post(f"{self.base_url}/auth/verify-otp", 
-                json={"phone": "+919876543210", "otp": "123456", "role": "customer"})
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("new_user"):
-                    self.log_result("Verify OTP (New Customer)", True, "New user detected correctly")
-                    self.test_data["customer_phone"] = "+919876543210"
-                else:
-                    self.log_result("Verify OTP (New Customer)", False, "Should return new_user=True", data)
-            else:
-                self.log_result("Verify OTP (New Customer)", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Verify OTP (New Customer)", False, f"Exception: {str(e)}")
-        
-        # Test 4: Verify OTP for new driver
-        try:
-            response = self.session.post(f"{self.base_url}/auth/verify-otp", 
-                json={"phone": "+919876543211", "otp": "123456", "role": "driver"})
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("new_user"):
-                    self.log_result("Verify OTP (New Driver)", True, "New user detected correctly")
-                    self.test_data["driver_phone"] = "+919876543211"
-                else:
-                    self.log_result("Verify OTP (New Driver)", False, "Should return new_user=True", data)
-            else:
-                self.log_result("Verify OTP (New Driver)", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Verify OTP (New Driver)", False, f"Exception: {str(e)}")
-        
-        # Test 5: Verify invalid OTP
-        try:
-            response = self.session.post(f"{self.base_url}/auth/verify-otp", 
-                json={"phone": "+919876543210", "otp": "000000", "role": "customer"})
-            
-            if response.status_code == 400:
-                self.log_result("Verify Invalid OTP", True, "Correctly rejected invalid OTP")
-            else:
-                self.log_result("Verify Invalid OTP", False, f"Should return 400, got {response.status_code}")
-        except Exception as e:
-            self.log_result("Verify Invalid OTP", False, f"Exception: {str(e)}")
+            return response
+        except requests.exceptions.RequestException as e:
+            return None
     
-    def test_customer_apis(self):
-        """Test customer APIs"""
-        print("\n=== Testing Customer APIs ===")
+    def create_driver_with_kyc(self, phone, name="Test Driver"):
+        """Create a new driver with complete KYC"""
+        # Step 1: Send OTP
+        otp_response = self.make_request("POST", "/auth/send-otp", {
+            "phone": phone,
+            "role": "driver"
+        })
         
-        # Test 1: Register customer
-        try:
-            customer_data = {
-                "phone": self.test_data.get("customer_phone", "+919876543210"),
-                "name": "Rajesh Kumar",
-                "location": {
-                    "latitude": 28.6139,
-                    "longitude": 77.2090,
-                    "address": "Connaught Place, New Delhi"
-                }
-            }
-            
-            response = self.session.post(f"{self.base_url}/customer/register", json=customer_data)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("user", {}).get("user_id"):
-                    customer_id = data["user"]["user_id"]
-                    self.test_data["customer_id"] = customer_id
-                    self.log_result("Customer Registration", True, f"Customer registered with ID: {customer_id}")
-                else:
-                    self.log_result("Customer Registration", False, "Invalid response format", data)
-            else:
-                self.log_result("Customer Registration", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Customer Registration", False, f"Exception: {str(e)}")
+        if not otp_response or otp_response.status_code != 200:
+            return None, "Failed to send OTP"
         
-        # Test 2: Get customer profile
-        if "customer_id" in self.test_data:
-            try:
-                customer_id = self.test_data["customer_id"]
-                response = self.session.get(f"{self.base_url}/customer/{customer_id}/profile")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and data.get("user", {}).get("name") == "Rajesh Kumar":
-                        self.log_result("Get Customer Profile", True, "Profile retrieved successfully")
-                    else:
-                        self.log_result("Get Customer Profile", False, "Profile data mismatch", data)
-                else:
-                    self.log_result("Get Customer Profile", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Customer Profile", False, f"Exception: {str(e)}")
+        # Step 2: Verify OTP
+        verify_response = self.make_request("POST", "/auth/verify-otp", {
+            "phone": phone,
+            "otp": MOCK_OTP,
+            "role": "driver"
+        })
         
-        # Test 3: Get customer bookings (should be empty initially)
-        if "customer_id" in self.test_data:
-            try:
-                customer_id = self.test_data["customer_id"]
-                response = self.session.get(f"{self.base_url}/customer/{customer_id}/bookings")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and isinstance(data.get("bookings"), list):
-                        self.log_result("Get Customer Bookings", True, f"Retrieved {len(data['bookings'])} bookings")
-                    else:
-                        self.log_result("Get Customer Bookings", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Customer Bookings", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Customer Bookings", False, f"Exception: {str(e)}")
-    
-    def test_driver_apis(self):
-        """Test driver APIs"""
-        print("\n=== Testing Driver APIs ===")
+        if not verify_response or verify_response.status_code != 200:
+            return None, "Failed to verify OTP"
         
-        # Test 1: Register driver
-        try:
-            driver_data = {
-                "phone": self.test_data.get("driver_phone", "+919876543211"),
-                "name": "Suresh Singh",
+        # Step 3: Register KYC
+        future_date = (date.today() + timedelta(days=365)).isoformat()
+        
+        kyc_data = {
+            "phone": phone,
+            "personal_details": {
+                "full_name": name,
+                "mobile_number": phone,
+                "full_address": "Test Address, Test City",
+                "aadhaar_number": "123456789012",
+                "pan_number": "ABCDE1234F",
+                "driving_license_number": "DL123456789",
+                "driving_experience_years": 5,
+                "driver_photo": "base64_photo_data"
+            },
+            "bank_details": {
+                "account_holder_name": name,
+                "bank_name": "Test Bank",
+                "account_number": "1234567890123456",
+                "ifsc_code": "TEST0123456",
+                "branch_name": "Test Branch"
+            },
+            "vehicle_details": {
                 "vehicle_type": "sedan",
-                "vehicle_number": "DL01AB1234",
-                "license_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
-                "rc_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                "vehicle_number": "TN01AB1234",
+                "vehicle_model": "Test Model",
+                "vehicle_year": 2020
+            },
+            "documents": {
+                "aadhaar_card": {"front_image": "base64_aadhaar_front", "back_image": "base64_aadhaar_back"},
+                "pan_card": {"front_image": "base64_pan_front"},
+                "driving_license": {"front_image": "base64_dl_front", "back_image": "base64_dl_back"},
+                "rc_book": {"front_image": "base64_rc_front", "back_image": "base64_rc_back"},
+                "insurance": {"front_image": "base64_insurance"},
+                "fitness_certificate": {"front_image": "base64_fc"},
+                "permit": {"front_image": "base64_permit"},
+                "pollution_certificate": {"front_image": "base64_pollution"}
+            },
+            "document_expiry": {
+                "insurance_expiry": future_date,
+                "fc_expiry": future_date,
+                "permit_expiry": future_date,
+                "pollution_expiry": future_date,
+                "license_expiry": future_date
+            },
+            "driver_vehicle_photo": {
+                "photo": "base64_vehicle_photo"
             }
-            
-            response = self.session.post(f"{self.base_url}/driver/register", json=driver_data)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("driver", {}).get("driver_id"):
-                    driver_id = data["driver"]["driver_id"]
-                    self.test_data["driver_id"] = driver_id
-                    approval_status = data["driver"].get("approval_status")
-                    self.log_result("Driver Registration", True, f"Driver registered with ID: {driver_id}, Status: {approval_status}")
-                else:
-                    self.log_result("Driver Registration", False, "Invalid response format", data)
-            else:
-                self.log_result("Driver Registration", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Driver Registration", False, f"Exception: {str(e)}")
-        
-        # Test 2: Get driver profile
-        if "driver_id" in self.test_data:
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{driver_id}/profile")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and data.get("driver", {}).get("name") == "Suresh Singh":
-                        self.log_result("Get Driver Profile", True, "Profile retrieved successfully")
-                    else:
-                        self.log_result("Get Driver Profile", False, "Profile data mismatch", data)
-                else:
-                    self.log_result("Get Driver Profile", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Driver Profile", False, f"Exception: {str(e)}")
-        
-        # Test 3: Try to set driver online (should fail - not approved yet)
-        if "driver_id" in self.test_data:
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.put(f"{self.base_url}/driver/{driver_id}/status", 
-                    json={"is_online": True})
-                
-                if response.status_code == 403:
-                    self.log_result("Set Driver Online (Unapproved)", True, "Correctly rejected unapproved driver")
-                else:
-                    self.log_result("Set Driver Online (Unapproved)", False, f"Should return 403, got {response.status_code}")
-            except Exception as e:
-                self.log_result("Set Driver Online (Unapproved)", False, f"Exception: {str(e)}")
-        
-        # Test 4: Get driver rides (should be empty)
-        if "driver_id" in self.test_data:
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{driver_id}/rides")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and isinstance(data.get("rides"), list):
-                        self.log_result("Get Driver Rides", True, f"Retrieved {len(data['rides'])} rides")
-                    else:
-                        self.log_result("Get Driver Rides", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Driver Rides", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Driver Rides", False, f"Exception: {str(e)}")
-        
-        # Test 5: Get pending rides (should be empty)
-        if "driver_id" in self.test_data:
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{driver_id}/pending-rides")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and isinstance(data.get("pending_rides"), list):
-                        self.log_result("Get Pending Rides", True, f"Retrieved {len(data['pending_rides'])} pending rides")
-                    else:
-                        self.log_result("Get Pending Rides", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Pending Rides", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Pending Rides", False, f"Exception: {str(e)}")
-        
-        # Test 6: Get driver earnings
-        if "driver_id" in self.test_data:
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{driver_id}/earnings")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and "total_earnings" in data:
-                        self.log_result("Get Driver Earnings", True, f"Earnings: ₹{data.get('total_earnings', 0)}")
-                    else:
-                        self.log_result("Get Driver Earnings", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Driver Earnings", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Driver Earnings", False, f"Exception: {str(e)}")
-    
-    def test_admin_apis(self):
-        """Test admin APIs"""
-        print("\n=== Testing Admin APIs ===")
-        
-        # Test 1: Get all drivers
-        try:
-            response = self.session.get(f"{self.base_url}/admin/drivers")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and isinstance(data.get("drivers"), list):
-                    drivers_count = len(data["drivers"])
-                    self.log_result("Get All Drivers", True, f"Retrieved {drivers_count} drivers")
-                else:
-                    self.log_result("Get All Drivers", False, "Invalid response format", data)
-            else:
-                self.log_result("Get All Drivers", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Get All Drivers", False, f"Exception: {str(e)}")
-        
-        # Test 2: Approve driver
-        if "driver_id" in self.test_data:
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.put(f"{self.base_url}/admin/approve-driver", 
-                    json={"driver_id": driver_id, "approval_status": "approved"})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        self.log_result("Approve Driver", True, "Driver approved successfully")
-                        self.test_data["driver_approved"] = True
-                    else:
-                        self.log_result("Approve Driver", False, "Approval failed", data)
-                else:
-                    self.log_result("Approve Driver", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Approve Driver", False, f"Exception: {str(e)}")
-        
-        # Test 3: Get all customers
-        try:
-            response = self.session.get(f"{self.base_url}/admin/customers")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and isinstance(data.get("customers"), list):
-                    customers_count = len(data["customers"])
-                    self.log_result("Get All Customers", True, f"Retrieved {customers_count} customers")
-                else:
-                    self.log_result("Get All Customers", False, "Invalid response format", data)
-            else:
-                self.log_result("Get All Customers", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Get All Customers", False, f"Exception: {str(e)}")
-        
-        # Test 4: Get all bookings
-        try:
-            response = self.session.get(f"{self.base_url}/admin/bookings")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and isinstance(data.get("bookings"), list):
-                    bookings_count = len(data["bookings"])
-                    self.log_result("Get All Bookings", True, f"Retrieved {bookings_count} bookings")
-                else:
-                    self.log_result("Get All Bookings", False, "Invalid response format", data)
-            else:
-                self.log_result("Get All Bookings", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Get All Bookings", False, f"Exception: {str(e)}")
-        
-        # Test 5: Get admin stats
-        try:
-            response = self.session.get(f"{self.base_url}/admin/stats")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and "stats" in data:
-                    stats = data["stats"]
-                    self.log_result("Get Admin Stats", True, 
-                        f"Customers: {stats.get('total_customers')}, Drivers: {stats.get('total_drivers')}, Bookings: {stats.get('total_bookings')}")
-                else:
-                    self.log_result("Get Admin Stats", False, "Invalid response format", data)
-            else:
-                self.log_result("Get Admin Stats", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Get Admin Stats", False, f"Exception: {str(e)}")
-        
-        # Test 6: Get tariffs
-        try:
-            response = self.session.get(f"{self.base_url}/admin/tariffs")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and isinstance(data.get("tariffs"), list):
-                    tariffs_count = len(data["tariffs"])
-                    self.log_result("Get Tariffs", True, f"Retrieved {tariffs_count} tariff settings")
-                else:
-                    self.log_result("Get Tariffs", False, "Invalid response format", data)
-            else:
-                self.log_result("Get Tariffs", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Get Tariffs", False, f"Exception: {str(e)}")
-        
-        # Test 7: Update tariff
-        try:
-            response = self.session.put(f"{self.base_url}/admin/update-tariff", 
-                json={"vehicle_type": "sedan", "rate_per_km": 15.0, "minimum_fare": 350.0})
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success"):
-                    self.log_result("Update Tariff", True, "Tariff updated successfully")
-                else:
-                    self.log_result("Update Tariff", False, "Update failed", data)
-            else:
-                self.log_result("Update Tariff", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Update Tariff", False, f"Exception: {str(e)}")
-    
-    def test_driver_status_after_approval(self):
-        """Test driver status update after approval"""
-        print("\n=== Testing Driver Status (Post-Approval) ===")
-        
-        if "driver_id" in self.test_data and self.test_data.get("driver_approved"):
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.put(f"{self.base_url}/driver/{driver_id}/status", 
-                    json={"is_online": True})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and data.get("is_online"):
-                        self.log_result("Set Driver Online (Approved)", True, "Driver set online successfully")
-                        self.test_data["driver_online"] = True
-                    else:
-                        self.log_result("Set Driver Online (Approved)", False, "Failed to set online", data)
-                else:
-                    self.log_result("Set Driver Online (Approved)", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Set Driver Online (Approved)", False, f"Exception: {str(e)}")
-    
-    def test_booking_apis(self):
-        """Test booking APIs"""
-        print("\n=== Testing Booking APIs ===")
-        
-        # Test 1: Create booking (requires approved online driver)
-        if "customer_id" in self.test_data and self.test_data.get("driver_online"):
-            try:
-                booking_data = {
-                    "customer_id": self.test_data["customer_id"],
-                    "pickup": {
-                        "latitude": 28.6139,
-                        "longitude": 77.2090,
-                        "address": "Connaught Place, New Delhi"
-                    },
-                    "drop": {
-                        "latitude": 28.5355,
-                        "longitude": 77.3910,
-                        "address": "Noida Sector 18"
-                    },
-                    "vehicle_type": "sedan"
-                }
-                
-                response = self.session.post(f"{self.base_url}/booking/create", json=booking_data)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and data.get("booking", {}).get("booking_id"):
-                        booking_id = data["booking"]["booking_id"]
-                        fare = data["booking"].get("fare")
-                        distance = data["booking"].get("distance")
-                        self.test_data["booking_id"] = booking_id
-                        self.log_result("Create Booking", True, 
-                            f"Booking created: {booking_id}, Fare: ₹{fare}, Distance: {distance}km")
-                    else:
-                        self.log_result("Create Booking", False, "Invalid response format", data)
-                else:
-                    self.log_result("Create Booking", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Create Booking", False, f"Exception: {str(e)}")
-        elif not self.test_data.get("driver_online"):
-            self.log_result("Create Booking", False, "No online driver available for booking")
-        
-        # Test 2: Get booking details
-        if "booking_id" in self.test_data:
-            try:
-                booking_id = self.test_data["booking_id"]
-                response = self.session.get(f"{self.base_url}/booking/{booking_id}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and data.get("booking", {}).get("booking_id") == booking_id:
-                        self.log_result("Get Booking Details", True, "Booking details retrieved successfully")
-                    else:
-                        self.log_result("Get Booking Details", False, "Booking data mismatch", data)
-                else:
-                    self.log_result("Get Booking Details", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Booking Details", False, f"Exception: {str(e)}")
-        
-        # Test 3: Update booking status to accepted
-        if "booking_id" in self.test_data:
-            try:
-                booking_id = self.test_data["booking_id"]
-                response = self.session.put(f"{self.base_url}/booking/update", 
-                    json={"booking_id": booking_id, "status": "accepted"})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        self.log_result("Accept Booking", True, "Booking accepted successfully")
-                    else:
-                        self.log_result("Accept Booking", False, "Failed to accept booking", data)
-                else:
-                    self.log_result("Accept Booking", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Accept Booking", False, f"Exception: {str(e)}")
-        
-        # Test 4: Update booking status to ongoing
-        if "booking_id" in self.test_data:
-            try:
-                booking_id = self.test_data["booking_id"]
-                response = self.session.put(f"{self.base_url}/booking/update", 
-                    json={"booking_id": booking_id, "status": "ongoing"})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        self.log_result("Start Ride", True, "Ride started successfully")
-                    else:
-                        self.log_result("Start Ride", False, "Failed to start ride", data)
-                else:
-                    self.log_result("Start Ride", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Start Ride", False, f"Exception: {str(e)}")
-        
-        # Test 5: Update booking status to completed
-        if "booking_id" in self.test_data:
-            try:
-                booking_id = self.test_data["booking_id"]
-                response = self.session.put(f"{self.base_url}/booking/update", 
-                    json={"booking_id": booking_id, "status": "completed"})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        self.log_result("Complete Ride", True, "Ride completed successfully")
-                        self.test_data["ride_completed"] = True
-                    else:
-                        self.log_result("Complete Ride", False, "Failed to complete ride", data)
-                else:
-                    self.log_result("Complete Ride", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Complete Ride", False, f"Exception: {str(e)}")
-    
-    def test_wallet_apis(self):
-        """Test wallet APIs"""
-        print("\n=== Testing Wallet APIs ===")
-        
-        # Test 1: Get customer wallet
-        if "customer_id" in self.test_data:
-            try:
-                customer_id = self.test_data["customer_id"]
-                response = self.session.get(f"{self.base_url}/wallet/{customer_id}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and "wallet" in data:
-                        balance = data["wallet"].get("balance", 0)
-                        self.log_result("Get Customer Wallet", True, f"Wallet balance: ₹{balance}")
-                    else:
-                        self.log_result("Get Customer Wallet", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Customer Wallet", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Customer Wallet", False, f"Exception: {str(e)}")
-        
-        # Test 2: Add money to customer wallet
-        if "customer_id" in self.test_data:
-            try:
-                customer_id = self.test_data["customer_id"]
-                response = self.session.post(f"{self.base_url}/wallet/add-money", 
-                    json={"user_id": customer_id, "amount": 1000.0})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        new_balance = data.get("new_balance", 0)
-                        self.log_result("Add Money to Wallet", True, f"Money added, new balance: ₹{new_balance}")
-                    else:
-                        self.log_result("Add Money to Wallet", False, "Failed to add money", data)
-                else:
-                    self.log_result("Add Money to Wallet", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Add Money to Wallet", False, f"Exception: {str(e)}")
-        
-        # Test 3: Get driver wallet
-        if "driver_id" in self.test_data:
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.get(f"{self.base_url}/wallet/{driver_id}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and "wallet" in data:
-                        balance = data["wallet"].get("balance", 0)
-                        self.log_result("Get Driver Wallet", True, f"Wallet balance: ₹{balance}")
-                    else:
-                        self.log_result("Get Driver Wallet", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Driver Wallet", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Driver Wallet", False, f"Exception: {str(e)}")
-        
-        # Test 4: Driver withdrawal request (after completing ride)
-        if "driver_id" in self.test_data and self.test_data.get("ride_completed"):
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.post(f"{self.base_url}/wallet/withdraw", 
-                    json={"driver_id": driver_id, "amount": 100.0})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        self.log_result("Driver Withdrawal Request", True, "Withdrawal request submitted")
-                    else:
-                        self.log_result("Driver Withdrawal Request", False, "Failed to submit withdrawal", data)
-                else:
-                    self.log_result("Driver Withdrawal Request", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Driver Withdrawal Request", False, f"Exception: {str(e)}")
-    
-    def test_post_completion_checks(self):
-        """Test APIs after ride completion"""
-        print("\n=== Testing Post-Completion Checks ===")
-        
-        # Check updated driver earnings
-        if "driver_id" in self.test_data and self.test_data.get("ride_completed"):
-            try:
-                driver_id = self.test_data["driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{driver_id}/earnings")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        total_earnings = data.get("total_earnings", 0)
-                        total_rides = data.get("total_rides", 0)
-                        self.log_result("Check Updated Earnings", True, 
-                            f"Total rides: {total_rides}, Total earnings: ₹{total_earnings}")
-                    else:
-                        self.log_result("Check Updated Earnings", False, "Invalid response format", data)
-                else:
-                    self.log_result("Check Updated Earnings", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Check Updated Earnings", False, f"Exception: {str(e)}")
-        
-        # Check updated admin stats
-        try:
-            response = self.session.get(f"{self.base_url}/admin/stats")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and "stats" in data:
-                    stats = data["stats"]
-                    self.log_result("Check Updated Admin Stats", True, 
-                        f"Completed bookings: {stats.get('completed_bookings')}, Revenue: ₹{stats.get('total_revenue')}")
-                else:
-                    self.log_result("Check Updated Admin Stats", False, "Invalid response format", data)
-            else:
-                self.log_result("Check Updated Admin Stats", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Check Updated Admin Stats", False, f"Exception: {str(e)}")
-    
-    def test_kyc_system(self):
-        """Test comprehensive KYC system end-to-end"""
-        print("\n=== Testing KYC System End-to-End ===")
-        
-        # Test 1: Driver KYC Registration with comprehensive data
-        try:
-            from datetime import date, timedelta
-            
-            # Future dates for document expiry
-            future_date = (date.today() + timedelta(days=365)).isoformat()
-            
-            kyc_data = {
-                "phone": "+919876543299",
-                "personal_details": {
-                    "full_name": "Arjun Sharma",
-                    "mobile_number": "+919876543299",
-                    "full_address": "123 MG Road, Bangalore, Karnataka 560001",
-                    "aadhaar_number": "123456789012",
-                    "pan_number": "ABCDE1234F",
-                    "driving_license_number": "KA0520110012345",
-                    "driving_experience_years": 5,
-                    "driver_photo": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                },
-                "bank_details": {
-                    "account_holder_name": "Arjun Sharma",
-                    "bank_name": "State Bank of India",
-                    "account_number": "12345678901234",
-                    "ifsc_code": "SBIN0001234",
-                    "branch_name": "MG Road Branch"
-                },
-                "vehicle_details": {
-                    "vehicle_type": "sedan",
-                    "vehicle_number": "KA01AB1234",
-                    "vehicle_model": "Honda City",
-                    "vehicle_year": 2020
-                },
-                "documents": {
-                    "aadhaar_card": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
-                        "back_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    },
-                    "pan_card": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    },
-                    "driving_license": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
-                        "back_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    },
-                    "rc_book": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    },
-                    "insurance": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    },
-                    "fitness_certificate": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    },
-                    "permit": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    },
-                    "pollution_certificate": {
-                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                    }
-                },
-                "document_expiry": {
-                    "insurance_expiry": future_date,
-                    "fc_expiry": future_date,
-                    "permit_expiry": future_date,
-                    "pollution_expiry": future_date,
-                    "license_expiry": future_date
-                },
-                "driver_vehicle_photo": {
-                    "photo": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-                }
-            }
-            
-            response = self.session.post(f"{self.base_url}/driver/register-kyc", json=kyc_data)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("driver_id"):
-                    kyc_driver_id = data["driver_id"]
-                    approval_status = data.get("approval_status")
-                    self.test_data["kyc_driver_id"] = kyc_driver_id
-                    self.log_result("KYC Driver Registration", True, 
-                        f"KYC driver registered with ID: {kyc_driver_id}, Status: {approval_status}")
-                    
-                    # Verify wallet was created with minimum balance requirement
-                    wallet_response = self.session.get(f"{self.base_url}/wallet/{kyc_driver_id}")
-                    if wallet_response.status_code == 200:
-                        wallet_data = wallet_response.json()
-                        min_balance = wallet_data.get("wallet", {}).get("minimum_balance_required")
-                        if min_balance == 1000.0:
-                            self.log_result("KYC Wallet Creation", True, "Wallet created with minimum_balance_required=1000")
-                        else:
-                            self.log_result("KYC Wallet Creation", False, f"Expected minimum_balance_required=1000, got {min_balance}")
-                    else:
-                        self.log_result("KYC Wallet Creation", False, "Failed to retrieve wallet")
-                else:
-                    self.log_result("KYC Driver Registration", False, "Invalid response format", data)
-            else:
-                self.log_result("KYC Driver Registration", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("KYC Driver Registration", False, f"Exception: {str(e)}")
-        
-        # Test 2: Test validation errors
-        try:
-            invalid_kyc_data = {
-                "phone": "+919876543298",
-                "personal_details": {
-                    "full_name": "Test Driver",
-                    "mobile_number": "+919876543298",
-                    "full_address": "Test Address",
-                    "aadhaar_number": "12345",  # Invalid - should be 12 digits
-                    "pan_number": "ABC123",     # Invalid - should be 10 chars
-                    "driving_license_number": "TEST123",
-                    "driving_experience_years": 3,
-                    "driver_photo": "data:image/jpeg;base64,test"
-                },
-                "bank_details": {
-                    "account_holder_name": "Test Driver",
-                    "bank_name": "Test Bank",
-                    "account_number": "123",    # Invalid - too short
-                    "ifsc_code": "TEST123",     # Invalid - should be 11 chars
-                    "branch_name": "Test Branch"
-                },
-                "vehicle_details": {
-                    "vehicle_type": "sedan",
-                    "vehicle_number": "TEST123",
-                    "vehicle_model": "Test Car",
-                    "vehicle_year": 2020
-                },
-                "documents": {
-                    "aadhaar_card": {"front_image": "test"},
-                    "pan_card": {"front_image": "test"},
-                    "driving_license": {"front_image": "test"},
-                    "rc_book": {"front_image": "test"},
-                    "insurance": {"front_image": "test"},
-                    "fitness_certificate": {"front_image": "test"},
-                    "permit": {"front_image": "test"},
-                    "pollution_certificate": {"front_image": "test"}
-                },
-                "document_expiry": {
-                    "insurance_expiry": "2025-12-31",
-                    "fc_expiry": "2025-12-31",
-                    "permit_expiry": "2025-12-31",
-                    "pollution_expiry": "2025-12-31",
-                    "license_expiry": "2025-12-31"
-                },
-                "driver_vehicle_photo": {"photo": "test"}
-            }
-            
-            response = self.session.post(f"{self.base_url}/driver/register-kyc", json=invalid_kyc_data)
-            
-            if response.status_code == 400:
-                self.log_result("KYC Validation Tests", True, "Correctly rejected invalid data")
-            else:
-                self.log_result("KYC Validation Tests", False, f"Should return 400, got {response.status_code}")
-        except Exception as e:
-            self.log_result("KYC Validation Tests", False, f"Exception: {str(e)}")
-        
-        # Test 3: Get pending drivers for verification
-        try:
-            response = self.session.get(f"{self.base_url}/admin/drivers/pending-verification")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and isinstance(data.get("pending_drivers"), list):
-                    pending_count = len(data["pending_drivers"])
-                    # Check if our KYC driver is in the list
-                    kyc_driver_found = False
-                    if "kyc_driver_id" in self.test_data:
-                        for driver in data["pending_drivers"]:
-                            if driver.get("driver_id") == self.test_data["kyc_driver_id"]:
-                                kyc_driver_found = True
-                                break
-                    
-                    if kyc_driver_found:
-                        self.log_result("Get Pending Drivers", True, f"Found {pending_count} pending drivers including our KYC driver")
-                    else:
-                        self.log_result("Get Pending Drivers", True, f"Found {pending_count} pending drivers")
-                else:
-                    self.log_result("Get Pending Drivers", False, "Invalid response format", data)
-            else:
-                self.log_result("Get Pending Drivers", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Get Pending Drivers", False, f"Exception: {str(e)}")
-        
-        # Test 4: Get driver details for verification
-        if "kyc_driver_id" in self.test_data:
-            try:
-                kyc_driver_id = self.test_data["kyc_driver_id"]
-                response = self.session.get(f"{self.base_url}/admin/driver/{kyc_driver_id}/verification-view")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and data.get("driver", {}).get("driver_id") == kyc_driver_id:
-                        driver_data = data["driver"]
-                        has_personal_details = "personal_details" in driver_data
-                        has_bank_details = "bank_details" in driver_data
-                        has_documents = "documents" in driver_data
-                        has_expiry_alerts = "expiry_alerts" in driver_data
-                        
-                        if all([has_personal_details, has_bank_details, has_documents, has_expiry_alerts]):
-                            self.log_result("Get Driver Verification View", True, "Complete driver details retrieved with expiry alerts")
-                        else:
-                            missing = []
-                            if not has_personal_details: missing.append("personal_details")
-                            if not has_bank_details: missing.append("bank_details")
-                            if not has_documents: missing.append("documents")
-                            if not has_expiry_alerts: missing.append("expiry_alerts")
-                            self.log_result("Get Driver Verification View", False, f"Missing fields: {missing}")
-                    else:
-                        self.log_result("Get Driver Verification View", False, "Driver data mismatch", data)
-                else:
-                    self.log_result("Get Driver Verification View", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Driver Verification View", False, f"Exception: {str(e)}")
-        
-        # Test 5: Approve driver
-        if "kyc_driver_id" in self.test_data:
-            try:
-                kyc_driver_id = self.test_data["kyc_driver_id"]
-                response = self.session.put(f"{self.base_url}/admin/driver/approve", 
-                    json={"driver_id": kyc_driver_id, "approval_status": "approved"})
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        self.log_result("Approve KYC Driver", True, "KYC driver approved successfully")
-                        self.test_data["kyc_driver_approved"] = True
-                    else:
-                        self.log_result("Approve KYC Driver", False, "Approval failed", data)
-                else:
-                    self.log_result("Approve KYC Driver", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Approve KYC Driver", False, f"Exception: {str(e)}")
-        
-        # Test 6: Verify driver status changed to approved
-        if "kyc_driver_id" in self.test_data and self.test_data.get("kyc_driver_approved"):
-            try:
-                kyc_driver_id = self.test_data["kyc_driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{kyc_driver_id}/profile-complete")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        driver = data.get("driver", {})
-                        approval_status = driver.get("approval_status")
-                        if approval_status == "approved":
-                            self.log_result("Verify Driver Status Change", True, "Driver status successfully changed to 'approved'")
-                        else:
-                            self.log_result("Verify Driver Status Change", False, f"Expected 'approved', got '{approval_status}'")
-                    else:
-                        self.log_result("Verify Driver Status Change", False, "Failed to get driver profile", data)
-                else:
-                    self.log_result("Verify Driver Status Change", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Verify Driver Status Change", False, f"Exception: {str(e)}")
-        
-        # Test 7: Get complete driver profile
-        if "kyc_driver_id" in self.test_data:
-            try:
-                kyc_driver_id = self.test_data["kyc_driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{kyc_driver_id}/profile-complete")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and data.get("driver"):
-                        driver = data["driver"]
-                        has_all_sections = all(key in driver for key in [
-                            "personal_details", "bank_details", "vehicle_details", 
-                            "documents", "document_expiry", "expiry_alerts"
-                        ])
-                        
-                        if has_all_sections:
-                            self.log_result("Get Complete Driver Profile", True, "Complete KYC profile retrieved successfully")
-                        else:
-                            self.log_result("Get Complete Driver Profile", False, "Missing profile sections")
-                    else:
-                        self.log_result("Get Complete Driver Profile", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Complete Driver Profile", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Complete Driver Profile", False, f"Exception: {str(e)}")
-        
-        # Test 8: Get expiry alerts
-        if "kyc_driver_id" in self.test_data:
-            try:
-                kyc_driver_id = self.test_data["kyc_driver_id"]
-                response = self.session.get(f"{self.base_url}/driver/{kyc_driver_id}/expiry-alerts")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success") and "expiry_alerts" in data:
-                        alerts = data["expiry_alerts"]
-                        has_all_expiries = "all_expiries" in alerts
-                        has_critical_alerts = "critical_alerts" in alerts
-                        
-                        if has_all_expiries and has_critical_alerts:
-                            critical_count = len(alerts.get("critical_alerts", []))
-                            self.log_result("Get Expiry Alerts", True, f"Expiry alerts retrieved, {critical_count} critical alerts")
-                        else:
-                            self.log_result("Get Expiry Alerts", False, "Missing expiry alert fields")
-                    else:
-                        self.log_result("Get Expiry Alerts", False, "Invalid response format", data)
-                else:
-                    self.log_result("Get Expiry Alerts", False, f"HTTP {response.status_code}", response.text)
-            except Exception as e:
-                self.log_result("Get Expiry Alerts", False, f"Exception: {str(e)}")
-        
-        # Test 9: Test auth flow with expiry alerts
-        try:
-            response = self.session.post(f"{self.base_url}/auth/verify-otp", 
-                json={"phone": "+919876543299", "otp": "123456", "role": "driver"})
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and not data.get("new_user"):
-                    user_data = data.get("user", {})
-                    has_expiry_alerts = "expiry_alerts" in user_data
-                    
-                    if has_expiry_alerts:
-                        self.log_result("Auth with Expiry Alerts", True, "Driver auth returned expiry alerts")
-                    else:
-                        self.log_result("Auth with Expiry Alerts", False, "Missing expiry alerts in auth response")
-                else:
-                    self.log_result("Auth with Expiry Alerts", False, "Should return existing user with expiry alerts", data)
-            else:
-                self.log_result("Auth with Expiry Alerts", False, f"HTTP {response.status_code}", response.text)
-        except Exception as e:
-            self.log_result("Auth with Expiry Alerts", False, f"Exception: {str(e)}")
-
-    def run_all_tests(self):
-        """Run all test suites"""
-        print(f"🚀 Starting VK Drop Taxi Backend API Tests")
-        print(f"Backend URL: {self.base_url}")
-        print("=" * 60)
-        
-        # Run tests in sequence
-        self.test_auth_apis()
-        self.test_customer_apis()
-        self.test_driver_apis()
-        self.test_admin_apis()
-        self.test_driver_status_after_approval()
-        self.test_booking_apis()
-        self.test_wallet_apis()
-        self.test_post_completion_checks()
-        
-        # NEW: Test KYC System
-        self.test_kyc_system()
-        
-        # Summary
-        print("\n" + "=" * 60)
-        print("🏁 TEST SUMMARY")
-        print("=" * 60)
-        
-        passed = sum(1 for r in self.results if r["success"])
-        failed = sum(1 for r in self.results if not r["success"])
-        total = len(self.results)
-        
-        print(f"Total Tests: {total}")
-        print(f"✅ Passed: {passed}")
-        print(f"❌ Failed: {failed}")
-        print(f"Success Rate: {(passed/total*100):.1f}%")
-        
-        if failed > 0:
-            print("\n🔍 FAILED TESTS:")
-            for result in self.results:
-                if not result["success"]:
-                    print(f"   ❌ {result['test']}: {result['details']}")
-        
-        return {
-            "total": total,
-            "passed": passed,
-            "failed": failed,
-            "success_rate": passed/total*100,
-            "results": self.results
         }
+        
+        kyc_response = self.make_request("POST", "/driver/register-kyc", kyc_data)
+        
+        if not kyc_response or kyc_response.status_code != 200:
+            return None, f"Failed to register KYC: {kyc_response.text if kyc_response else 'No response'}"
+        
+        driver_data = kyc_response.json()
+        driver_id = driver_data.get('driver_id')
+        
+        if driver_id:
+            self.created_entities['drivers'].append(driver_id)
+        
+        return driver_id, "Driver created successfully"
+    
+    def approve_driver(self, driver_id):
+        """Approve driver"""
+        response = self.make_request("PUT", "/admin/driver/approve", {
+            "driver_id": driver_id,
+            "approval_status": "approved"
+        })
+        
+        return response and response.status_code == 200
+    
+    def add_money_to_wallet(self, user_id, amount):
+        """Add money to driver wallet"""
+        response = self.make_request("POST", "/wallet/add-money", {
+            "user_id": user_id,
+            "amount": amount
+        })
+        
+        return response and response.status_code == 200
+    
+    def set_driver_duty_on(self, driver_id):
+        """Turn driver duty ON"""
+        response = self.make_request("PUT", f"/driver/{driver_id}/duty-status", {
+            "duty_on": True,
+            "go_home_mode": False
+        })
+        
+        return response and response.status_code == 200
+    
+    def update_driver_location(self, driver_id, lat=12.97, lon=80.24):
+        """Update driver location"""
+        response = self.make_request("PUT", f"/driver/{driver_id}/location", {
+            "latitude": lat,
+            "longitude": lon,
+            "address": "Test Location"
+        })
+        
+        return response and response.status_code == 200
+    
+    def create_customer(self, phone="8888877777", name="Test Customer"):
+        """Create a customer"""
+        # Send OTP
+        otp_response = self.make_request("POST", "/auth/send-otp", {
+            "phone": phone,
+            "role": "customer"
+        })
+        
+        if not otp_response or otp_response.status_code != 200:
+            return None
+        
+        # Verify OTP
+        verify_response = self.make_request("POST", "/auth/verify-otp", {
+            "phone": phone,
+            "otp": MOCK_OTP,
+            "role": "customer"
+        })
+        
+        if not verify_response or verify_response.status_code != 200:
+            return None
+        
+        # Register customer
+        register_response = self.make_request("POST", "/customer/register", {
+            "phone": phone,
+            "name": name
+        })
+        
+        if not register_response or register_response.status_code != 200:
+            return None
+        
+        customer_data = register_response.json()
+        customer_id = customer_data.get('user', {}).get('user_id')
+        
+        if customer_id:
+            self.created_entities['customers'].append(customer_id)
+        
+        return customer_id
+    
+    def create_smart_booking(self, customer_id):
+        """Create a smart booking"""
+        booking_data = {
+            "customer_id": customer_id,
+            "pickup": {
+                "latitude": 12.97,
+                "longitude": 80.24,
+                "address": "Pickup Location"
+            },
+            "drop": {
+                "latitude": 13.08,
+                "longitude": 80.27,
+                "address": "Drop Location"
+            },
+            "vehicle_type": "sedan",
+            "assignment_mode": "auto"
+        }
+        
+        response = self.make_request("POST", "/booking/create-smart", booking_data)
+        
+        if response and response.status_code == 200:
+            booking_data = response.json()
+            booking_id = booking_data.get('booking', {}).get('booking_id')
+            if booking_id:
+                self.created_entities['bookings'].append(booking_id)
+            return booking_id, response.json()
+        
+        return None, response.json() if response else {"error": "No response"}
+    
+    def accept_reject_booking(self, booking_id, driver_id, action):
+        """Accept or reject booking"""
+        response = self.make_request("POST", "/booking/accept-reject", {
+            "booking_id": booking_id,
+            "driver_id": driver_id,
+            "action": action
+        })
+        
+        return response and response.status_code == 200, response.json() if response else {"error": "No response"}
+    
+    def start_trip(self, booking_id):
+        """Start trip"""
+        response = self.make_request("PUT", f"/booking/{booking_id}/start-trip")
+        return response and response.status_code == 200
+    
+    def complete_trip(self, booking_id):
+        """Complete trip"""
+        response = self.make_request("PUT", f"/booking/{booking_id}/complete-trip")
+        return response and response.status_code == 200
+    
+    def get_queue_status(self, driver_id):
+        """Get driver queue status"""
+        response = self.make_request("GET", f"/driver/{driver_id}/queue-status")
+        if response and response.status_code == 200:
+            return response.json()
+        return None
+    
+    def get_wallet_balance(self, user_id):
+        """Get wallet balance"""
+        response = self.make_request("GET", f"/wallet/{user_id}")
+        if response and response.status_code == 200:
+            return response.json().get('wallet', {}).get('balance', 0)
+        return 0
+
+    # ==================== CRITICAL TEST 1: WALLET BALANCE RESTRICTION ====================
+    
+    def test_wallet_balance_restriction(self):
+        """Test wallet balance restriction (< ₹1000)"""
+        print("🔥 CRITICAL TEST 1: Wallet Balance Restriction (< ₹1000)")
+        print("=" * 60)
+        
+        # Create new driver with different phone
+        driver_phone = "9999988888"
+        driver_id, error = self.create_driver_with_kyc(driver_phone, "Wallet Test Driver")
+        
+        if not driver_id:
+            self.log_test("Create Driver for Wallet Test", False, error=error)
+            return
+        
+        self.log_test("Create Driver for Wallet Test", True, f"Driver ID: {driver_id}")
+        
+        # Approve driver
+        if not self.approve_driver(driver_id):
+            self.log_test("Approve Driver", False, error="Failed to approve driver")
+            return
+        
+        self.log_test("Approve Driver", True, "Driver approved successfully")
+        
+        # Turn duty ON (wallet balance is ₹0)
+        if not self.set_driver_duty_on(driver_id):
+            self.log_test("Set Duty ON with ₹0 wallet", False, error="Failed to set duty ON")
+            return
+        
+        self.log_test("Set Duty ON with ₹0 wallet", True, "Duty set to ON")
+        
+        # Update driver location
+        if not self.update_driver_location(driver_id):
+            self.log_test("Update Driver Location", False, error="Failed to update location")
+            return
+        
+        self.log_test("Update Driver Location", True, "Location updated")
+        
+        # Create customer
+        customer_id = self.create_customer()
+        if not customer_id:
+            self.log_test("Create Customer", False, error="Failed to create customer")
+            return
+        
+        self.log_test("Create Customer", True, f"Customer ID: {customer_id}")
+        
+        # Try to create smart booking - SHOULD FAIL (wallet ₹0 < ₹1000)
+        booking_id, booking_response = self.create_smart_booking(customer_id)
+        
+        if booking_id:
+            self.log_test("Smart Booking with ₹0 Wallet", False, 
+                         error="Booking should have failed due to insufficient wallet balance")
+        else:
+            error_msg = booking_response.get('detail', 'Unknown error')
+            if "No eligible drivers available" in error_msg or "wallet" in error_msg.lower():
+                self.log_test("Smart Booking with ₹0 Wallet", True, 
+                             f"Correctly rejected: {error_msg}")
+            else:
+                self.log_test("Smart Booking with ₹0 Wallet", False, 
+                             f"Wrong error message: {error_msg}")
+        
+        # Add ₹500 to wallet (still below ₹1000)
+        if not self.add_money_to_wallet(driver_id, 500):
+            self.log_test("Add ₹500 to Wallet", False, error="Failed to add money")
+            return
+        
+        self.log_test("Add ₹500 to Wallet", True, "₹500 added successfully")
+        
+        # Try booking again - SHOULD STILL FAIL (₹500 < ₹1000)
+        booking_id, booking_response = self.create_smart_booking(customer_id)
+        
+        if booking_id:
+            self.log_test("Smart Booking with ₹500 Wallet", False, 
+                         error="Booking should have failed due to insufficient wallet balance")
+        else:
+            error_msg = booking_response.get('detail', 'Unknown error')
+            if "No eligible drivers available" in error_msg or "wallet" in error_msg.lower():
+                self.log_test("Smart Booking with ₹500 Wallet", True, 
+                             f"Correctly rejected: {error_msg}")
+            else:
+                self.log_test("Smart Booking with ₹500 Wallet", False, 
+                             f"Wrong error message: {error_msg}")
+        
+        # Add ₹600 more (total ₹1100)
+        if not self.add_money_to_wallet(driver_id, 600):
+            self.log_test("Add ₹600 More to Wallet", False, error="Failed to add money")
+            return
+        
+        self.log_test("Add ₹600 More to Wallet", True, "₹600 added, total ₹1100")
+        
+        # Verify wallet balance
+        balance = self.get_wallet_balance(driver_id)
+        self.log_test("Verify Wallet Balance", True, f"Current balance: ₹{balance}")
+        
+        # Try booking again - SHOULD NOW SUCCEED (₹1100 > ₹1000)
+        booking_id, booking_response = self.create_smart_booking(customer_id)
+        
+        if booking_id:
+            self.log_test("Smart Booking with ₹1100 Wallet", True, 
+                         f"Booking created successfully: {booking_id}")
+            return driver_id, booking_id  # Return for next test
+        else:
+            error_msg = booking_response.get('detail', 'Unknown error')
+            self.log_test("Smart Booking with ₹1100 Wallet", False, 
+                         f"Booking failed unexpectedly: {error_msg}")
+            return driver_id, None
+    
+    # ==================== CRITICAL TEST 2: BOOKING REJECT AND REASSIGNMENT ====================
+    
+    def test_booking_reject_reassignment(self, driver_id, booking_id):
+        """Test booking reject and reassignment"""
+        print("\n🔥 CRITICAL TEST 2: Booking Reject and Reassignment")
+        print("=" * 60)
+        
+        if not driver_id or not booking_id:
+            self.log_test("Booking Reject Test Setup", False, 
+                         error="Missing driver_id or booking_id from previous test")
+            return
+        
+        # Reject the booking
+        success, response = self.accept_reject_booking(booking_id, driver_id, "reject")
+        
+        if success:
+            self.log_test("Reject Booking", True, "Booking rejected successfully")
+        else:
+            error_msg = response.get('detail', 'Unknown error')
+            self.log_test("Reject Booking", False, f"Failed to reject: {error_msg}")
+            return
+        
+        # Verify booking status becomes "cancelled"
+        booking_response = self.make_request("GET", f"/booking/{booking_id}")
+        if booking_response and booking_response.status_code == 200:
+            booking_data = booking_response.json()
+            booking_status = booking_data.get('booking', {}).get('status')
+            
+            if booking_status == "cancelled":
+                self.log_test("Verify Booking Status", True, "Booking status is 'cancelled'")
+            else:
+                self.log_test("Verify Booking Status", False, 
+                             f"Expected 'cancelled', got '{booking_status}'")
+        else:
+            self.log_test("Verify Booking Status", False, "Failed to get booking details")
+        
+        # Verify driver status returns to "available"
+        driver_response = self.make_request("GET", f"/driver/{driver_id}/profile")
+        if driver_response and driver_response.status_code == 200:
+            driver_data = driver_response.json()
+            driver_status = driver_data.get('driver', {}).get('driver_status')
+            
+            if driver_status == "available":
+                self.log_test("Verify Driver Status", True, "Driver status is 'available'")
+            else:
+                self.log_test("Verify Driver Status", False, 
+                             f"Expected 'available', got '{driver_status}'")
+        else:
+            self.log_test("Verify Driver Status", False, "Failed to get driver details")
+    
+    # ==================== CRITICAL TEST 3: 2-TRIP CONTINUITY RULE ====================
+    
+    def test_2_trip_continuity_rule(self, driver_id):
+        """Test 2-trip continuity rule"""
+        print("\n🔥 CRITICAL TEST 3: 2-Trip Continuity Rule")
+        print("=" * 60)
+        
+        if not driver_id:
+            self.log_test("2-Trip Test Setup", False, error="Missing driver_id from previous test")
+            return
+        
+        # Create customer for trips
+        customer_id = self.create_customer("7777766666", "Trip Test Customer")
+        if not customer_id:
+            self.log_test("Create Customer for Trips", False, error="Failed to create customer")
+            return
+        
+        self.log_test("Create Customer for Trips", True, f"Customer ID: {customer_id}")
+        
+        # Trip 1: Create → Accept → Start → Complete
+        print("\n--- Trip 1 ---")
+        
+        booking_id_1, booking_response_1 = self.create_smart_booking(customer_id)
+        if not booking_id_1:
+            self.log_test("Create Trip 1 Booking", False, 
+                         f"Failed: {booking_response_1.get('detail', 'Unknown error')}")
+            return
+        
+        self.log_test("Create Trip 1 Booking", True, f"Booking ID: {booking_id_1}")
+        
+        # Accept Trip 1
+        success, response = self.accept_reject_booking(booking_id_1, driver_id, "accept")
+        if not success:
+            self.log_test("Accept Trip 1", False, f"Failed: {response.get('detail', 'Unknown error')}")
+            return
+        
+        self.log_test("Accept Trip 1", True, "Trip 1 accepted")
+        
+        # Start Trip 1
+        if not self.start_trip(booking_id_1):
+            self.log_test("Start Trip 1", False, error="Failed to start trip")
+            return
+        
+        self.log_test("Start Trip 1", True, "Trip 1 started")
+        
+        # Complete Trip 1
+        if not self.complete_trip(booking_id_1):
+            self.log_test("Complete Trip 1", False, error="Failed to complete trip")
+            return
+        
+        self.log_test("Complete Trip 1", True, "Trip 1 completed")
+        
+        # Trip 2: Create → Accept → Start → Complete
+        print("\n--- Trip 2 ---")
+        
+        booking_id_2, booking_response_2 = self.create_smart_booking(customer_id)
+        if not booking_id_2:
+            self.log_test("Create Trip 2 Booking", False, 
+                         f"Failed: {booking_response_2.get('detail', 'Unknown error')}")
+            return
+        
+        self.log_test("Create Trip 2 Booking", True, f"Booking ID: {booking_id_2}")
+        
+        # Accept Trip 2
+        success, response = self.accept_reject_booking(booking_id_2, driver_id, "accept")
+        if not success:
+            self.log_test("Accept Trip 2", False, f"Failed: {response.get('detail', 'Unknown error')}")
+            return
+        
+        self.log_test("Accept Trip 2", True, "Trip 2 accepted")
+        
+        # Start Trip 2
+        if not self.start_trip(booking_id_2):
+            self.log_test("Start Trip 2", False, error="Failed to start trip")
+            return
+        
+        self.log_test("Start Trip 2", True, "Trip 2 started")
+        
+        # Complete Trip 2
+        if not self.complete_trip(booking_id_2):
+            self.log_test("Complete Trip 2", False, error="Failed to complete trip")
+            return
+        
+        self.log_test("Complete Trip 2", True, "Trip 2 completed")
+        
+        # Check queue status after 2 trips
+        print("\n--- Queue Status Check ---")
+        
+        queue_status = self.get_queue_status(driver_id)
+        if queue_status:
+            continuous_trips = queue_status.get('continuous_trips_count', 0)
+            in_queue = queue_status.get('in_queue', False)
+            
+            self.log_test("Check Continuous Trips Count", True, 
+                         f"Continuous trips: {continuous_trips}")
+            
+            if continuous_trips >= 2 or in_queue:
+                self.log_test("Verify 2-Trip Rule", True, 
+                             f"Driver correctly in queue or has 2+ trips (count: {continuous_trips}, in_queue: {in_queue})")
+            else:
+                self.log_test("Verify 2-Trip Rule", False, 
+                             f"Driver should be in queue after 2 trips (count: {continuous_trips}, in_queue: {in_queue})")
+        else:
+            self.log_test("Get Queue Status", False, error="Failed to get queue status")
+    
+    # ==================== MAIN TEST RUNNER ====================
+    
+    def run_all_tests(self):
+        """Run all critical tests"""
+        print("🚀 VK Drop Taxi Backend Testing - Edge Cases & Wallet Restrictions")
+        print("=" * 80)
+        print(f"Backend URL: {self.base_url}")
+        print(f"Mock OTP: {MOCK_OTP}")
+        print("=" * 80)
+        
+        # Test 1: Wallet Balance Restriction
+        driver_id, booking_id = self.test_wallet_balance_restriction()
+        
+        # Test 2: Booking Reject and Reassignment
+        self.test_booking_reject_reassignment(driver_id, booking_id)
+        
+        # Test 3: 2-Trip Continuity Rule
+        self.test_2_trip_continuity_rule(driver_id)
+        
+        # Print summary
+        self.print_summary()
+    
+    def print_summary(self):
+        """Print test summary"""
+        print("\n" + "=" * 80)
+        print("📊 TEST SUMMARY")
+        print("=" * 80)
+        
+        total_tests = len(self.test_results)
+        passed_tests = sum(1 for test in self.test_results if test['success'])
+        failed_tests = total_tests - passed_tests
+        
+        print(f"Total Tests: {total_tests}")
+        print(f"Passed: {passed_tests} ✅")
+        print(f"Failed: {failed_tests} ❌")
+        print(f"Success Rate: {(passed_tests/total_tests)*100:.1f}%")
+        
+        if failed_tests > 0:
+            print("\n🚨 FAILED TESTS:")
+            for test in self.test_results:
+                if not test['success']:
+                    print(f"  ❌ {test['test']}: {test['error']}")
+        
+        print("\n📋 CREATED ENTITIES:")
+        print(f"  Drivers: {len(self.created_entities['drivers'])}")
+        print(f"  Customers: {len(self.created_entities['customers'])}")
+        print(f"  Bookings: {len(self.created_entities['bookings'])}")
+        
+        print("\n" + "=" * 80)
 
 if __name__ == "__main__":
     tester = VKDropTaxiTester()
-    results = tester.run_all_tests()
+    tester.run_all_tests()

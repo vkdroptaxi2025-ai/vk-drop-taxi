@@ -901,6 +901,419 @@ async def get_admin_stats():
         }
     }
 
+# ==================== PHASE 2 & 3: DISPATCH SYSTEM ====================
+# Import dispatch logic
+from dispatch_logic import (
+    calculate_distance,
+    calculate_matching_score,
+    check_driver_eligibility,
+    is_trip_towards_home,
+    calculate_queue_priority,
+    check_and_update_trip_continuity,
+    can_driver_reach_in_time,
+)
+
+# Phase 2 & 3 Models
+class DutyStatusUpdate(BaseModel):
+    duty_on: bool
+    go_home_mode: bool = False
+    home_latitude: Optional[float] = None
+    home_longitude: Optional[float] = None
+    home_address: Optional[str] = None
+
+class LocationUpdate(BaseModel):
+    latitude: float
+    longitude: float
+    address: str
+
+class SmartBookingCreate(BaseModel):
+    customer_id: str
+    pickup: Location
+    drop: Location
+    vehicle_type: VehicleType
+    assignment_mode: str = "auto"  # auto or manual
+    manual_driver_id: Optional[str] = None
+
+class BookingAcceptReject(BaseModel):
+    booking_id: str
+    driver_id: str
+    action: str  # "accept" or "reject"
+
+# ==================== DRIVER DUTY & STATUS ====================
+@api_router.put("/driver/{driver_id}/duty-status")
+async def update_duty_status(driver_id: str, duty_update: DutyStatusUpdate):
+    """
+    Update driver duty status
+    - Duty ON/OFF
+    - Go Home mode with home location
+    """
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    if driver['approval_status'] != DriverApprovalStatus.APPROVED.value:
+        raise HTTPException(status_code=403, detail="Driver not approved yet")
+    
+    update_data = {
+        "duty_on": duty_update.duty_on,
+        "go_home_mode": duty_update.go_home_mode,
+        "updated_at": datetime.utcnow()
+    }
+    
+    # Update home location if go home mode is enabled
+    if duty_update.go_home_mode and duty_update.home_latitude and duty_update.home_longitude:
+        update_data["home_location"] = {
+            "latitude": duty_update.home_latitude,
+            "longitude": duty_update.home_longitude,
+            "address": duty_update.home_address or "Home"
+        }
+    
+    # Set driver status
+    if duty_update.duty_on:
+        if duty_update.go_home_mode:
+            update_data["driver_status"] = DriverStatus.GOING_HOME.value
+        else:
+            update_data["driver_status"] = DriverStatus.AVAILABLE.value
+        update_data["is_online"] = True
+    else:
+        update_data["driver_status"] = DriverStatus.OFFLINE.value
+        update_data["is_online"] = False
+        update_data["go_home_mode"] = False
+    
+    await db.drivers.update_one(
+        {"driver_id": driver_id},
+        {"$set": update_data}
+    )
+    
+    return {"success": True, "message": "Duty status updated", "duty_on": duty_update.duty_on}
+
+@api_router.put("/driver/{driver_id}/location")
+async def update_driver_location(driver_id: str, location: LocationUpdate):
+    """Update driver's current location"""
+    await db.drivers.update_one(
+        {"driver_id": driver_id},
+        {"$set": {
+            "current_location": {
+                "latitude": location.latitude,
+                "longitude": location.longitude,
+                "address": location.address
+            },
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    return {"success": True, "message": "Location updated"}
+
+# ==================== SMART DISPATCH BOOKING ====================
+@api_router.post("/booking/create-smart")
+async def create_smart_booking(booking: SmartBookingCreate):
+    """
+    Create booking with smart dispatch algorithm
+    - Auto mode: Find best matching driver
+    - Manual mode: Assign specific driver
+    - Implements 2-trip continuity and queue system
+    """
+    # Calculate distance and fare
+    distance = calculate_distance(
+        booking.pickup.latitude, booking.pickup.longitude,
+        booking.drop.latitude, booking.drop.longitude
+    )
+    fare = await calculate_fare(distance, booking.vehicle_type)
+    commission = fare * 0.10
+    driver_earning = fare - commission
+    
+    selected_driver = None
+    
+    if booking.assignment_mode == "manual" and booking.manual_driver_id:
+        # Manual assignment
+        selected_driver = await db.drivers.find_one({"driver_id": booking.manual_driver_id})
+        if not selected_driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+    else:
+        # Auto assignment with smart matching
+        # Get all approved, online, duty-on drivers
+        all_drivers = await db.drivers.find({
+            "approval_status": DriverApprovalStatus.APPROVED.value,
+            "duty_on": True,
+            "is_online": True,
+            "driver_status": {"$in": [DriverStatus.AVAILABLE.value, DriverStatus.WAITING.value, DriverStatus.GOING_HOME.value]}
+        }).to_list(1000)
+        
+        eligible_drivers = []
+        
+        for driver in all_drivers:
+            # Check wallet balance
+            wallet = await db.wallets.find_one({"user_id": driver['driver_id']})
+            wallet_balance = wallet.get('balance', 0) if wallet else 0
+            
+            # Check eligibility
+            eligibility = await check_driver_eligibility(driver, wallet_balance)
+            
+            if not eligibility['eligible']:
+                continue
+            
+            # Check distance (30-40 KM radius)
+            driver_loc = driver.get('current_location') or driver.get('last_trip_end_location')
+            if not driver_loc:
+                continue
+            
+            dist_to_pickup = calculate_distance(
+                driver_loc['latitude'], driver_loc['longitude'],
+                booking.pickup.latitude, booking.pickup.longitude
+            )
+            
+            if dist_to_pickup > 40:  # Beyond 40 KM radius
+                continue
+            
+            # Check time availability (1-hour buffer)
+            if not can_driver_reach_in_time(driver, booking.pickup.dict(), buffer_hours=1.0):
+                continue
+            
+            # If driver is in go-home mode, check if trip is towards home
+            if driver.get('go_home_mode'):
+                home_loc = driver.get('home_location')
+                if home_loc:
+                    if not is_trip_towards_home(booking.pickup.dict(), booking.drop.dict(), home_loc, threshold_km=10):
+                        continue  # Skip this driver if trip not towards home
+            
+            # Calculate matching score
+            booking_dict = {
+                "pickup": booking.pickup.dict(),
+                "drop": booking.drop.dict()
+            }
+            score = calculate_matching_score(driver, booking_dict)
+            
+            eligible_drivers.append({
+                "driver": driver,
+                "score": score,
+                "distance": dist_to_pickup
+            })
+        
+        if not eligible_drivers:
+            raise HTTPException(status_code=404, detail="No eligible drivers available")
+        
+        # Sort by matching score (highest first)
+        eligible_drivers.sort(key=lambda x: x['score'], reverse=True)
+        
+        # Select top driver
+        selected_driver = eligible_drivers[0]['driver']
+    
+    # Create booking
+    booking_data = {
+        "booking_id": str(uuid.uuid4()),
+        "customer_id": booking.customer_id,
+        "driver_id": selected_driver['driver_id'],
+        "pickup": booking.pickup.dict(),
+        "drop": booking.drop.dict(),
+        "vehicle_type": booking.vehicle_type.value,
+        "distance": round(distance, 2),
+        "fare": round(fare, 2),
+        "commission": round(commission, 2),
+        "driver_earning": round(driver_earning, 2),
+        "status": BookingStatus.REQUESTED.value,
+        "assignment_mode": booking.assignment_mode,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow(),
+        "assigned_at": datetime.utcnow()
+    }
+    
+    await db.bookings.insert_one(booking_data)
+    
+    # Update driver status
+    await db.drivers.update_one(
+        {"driver_id": selected_driver['driver_id']},
+        {"$set": {"driver_status": DriverStatus.WAITING.value}}
+    )
+    
+    booking_data['_id'] = str(booking_data.get('_id'))
+    booking_data['driver_name'] = selected_driver.get('personal_details', {}).get('full_name', selected_driver.get('name', 'Driver'))
+    booking_data['driver_phone'] = selected_driver.get('phone', '')
+    booking_data['vehicle_number'] = selected_driver.get('vehicle_details', {}).get('vehicle_number', '')
+    
+    return {"success": True, "booking": booking_data}
+
+# ==================== BOOKING ACCEPT/REJECT ====================
+@api_router.post("/booking/accept-reject")
+async def accept_reject_booking(action: BookingAcceptReject):
+    """
+    Driver accepts or rejects booking
+    - Accept: Move to accepted status, update 2-trip count
+    - Reject: Reassign to next driver
+    """
+    booking = await db.bookings.find_one({"booking_id": action.booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking['driver_id'] != action.driver_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    if action.action == "accept":
+        # Accept booking
+        await db.bookings.update_one(
+            {"booking_id": action.booking_id},
+            {"$set": {
+                "status": BookingStatus.ACCEPTED.value,
+                "accepted_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }}
+        )
+        
+        # Update driver status
+        await db.drivers.update_one(
+            {"driver_id": action.driver_id},
+            {"$set": {"driver_status": DriverStatus.ON_TRIP.value}}
+        )
+        
+        # Update 2-trip continuity
+        await check_and_update_trip_continuity(db, action.driver_id, "accepted")
+        
+        return {"success": True, "message": "Booking accepted"}
+    
+    elif action.action == "reject":
+        # Reject booking - reassign to next driver
+        # Mark current booking as cancelled
+        await db.bookings.update_one(
+            {"booking_id": action.booking_id},
+            {"$set": {
+                "status": BookingStatus.CANCELLED.value,
+                "rejection_reason": "Driver rejected",
+                "updated_at": datetime.utcnow()
+            }}
+        )
+        
+        # Reset driver status
+        await db.drivers.update_one(
+            {"driver_id": action.driver_id},
+            {"$set": {"driver_status": DriverStatus.AVAILABLE.value}}
+        )
+        
+        # TODO: Implement reassignment to next driver
+        # For MVP, just mark as cancelled and require new booking
+        
+        return {"success": True, "message": "Booking rejected"}
+    
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+# ==================== TRIP START/COMPLETE ====================
+@api_router.put("/booking/{booking_id}/start-trip")
+async def start_trip(booking_id: str):
+    """Start trip - move to ongoing status"""
+    booking = await db.bookings.find_one({"booking_id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking['status'] != BookingStatus.ACCEPTED.value:
+        raise HTTPException(status_code=400, detail="Booking must be accepted first")
+    
+    await db.bookings.update_one(
+        {"booking_id": booking_id},
+        {"$set": {
+            "status": BookingStatus.ONGOING.value,
+            "started_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    # Update driver status
+    await db.drivers.update_one(
+        {"driver_id": booking['driver_id']},
+        {"$set": {"driver_status": DriverStatus.ON_TRIP.value}}
+    )
+    
+    return {"success": True, "message": "Trip started"}
+
+@api_router.put("/booking/{booking_id}/complete-trip")
+async def complete_trip(booking_id: str):
+    """
+    Complete trip
+    - Update driver earnings
+    - Update trip end location and time
+    - Check 2-trip continuity rule
+    - Move driver to queue if needed
+    """
+    booking = await db.bookings.find_one({"booking_id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking['status'] != BookingStatus.ONGOING.value:
+        raise HTTPException(status_code=400, detail="Trip must be ongoing")
+    
+    # Complete booking
+    await db.bookings.update_one(
+        {"booking_id": booking_id},
+        {"$set": {
+            "status": BookingStatus.COMPLETED.value,
+            "completed_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    # Update driver earnings and trip count
+    driver_earning = booking.get('driver_earning', 0)
+    await db.drivers.update_one(
+        {"driver_id": booking['driver_id']},
+        {
+            "$inc": {
+                "earnings": driver_earning,
+                "completed_trips": 1,
+                "total_trips": 1
+            },
+            "$set": {
+                "last_trip_end_location": booking['drop'],
+                "last_trip_end_time": datetime.utcnow().isoformat(),
+                "driver_status": DriverStatus.AVAILABLE.value
+            }
+        }
+    )
+    
+    # Check 2-trip continuity
+    await check_and_update_trip_continuity(db, booking['driver_id'], "completed")
+    
+    return {"success": True, "message": "Trip completed", "earning": driver_earning}
+
+# ==================== QUEUE STATUS ====================
+@api_router.get("/driver/{driver_id}/queue-status")
+async def get_queue_status(driver_id: str):
+    """Get driver's queue status and position"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    # Get all drivers in queue
+    queue_drivers = await db.drivers.find({
+        "in_queue": True,
+        "duty_on": True
+    }).to_list(1000)
+    
+    # Calculate priorities
+    driver_priorities = []
+    for qd in queue_drivers:
+        priority = calculate_queue_priority(qd)
+        driver_priorities.append({
+            "driver_id": qd['driver_id'],
+            "priority": priority,
+            "name": qd.get('personal_details', {}).get('full_name', qd.get('name', 'Driver'))
+        })
+    
+    # Sort by priority (highest first)
+    driver_priorities.sort(key=lambda x: x['priority'], reverse=True)
+    
+    # Find driver's position
+    position = None
+    for idx, dp in enumerate(driver_priorities):
+        if dp['driver_id'] == driver_id:
+            position = idx + 1
+            break
+    
+    return {
+        "success": True,
+        "in_queue": driver.get('in_queue', False),
+        "queue_position": position,
+        "total_in_queue": len(driver_priorities),
+        "continuous_trips_count": driver.get('continuous_trips_count', 0)
+    }
+
 # Include the router
 app.include_router(api_router)
 
