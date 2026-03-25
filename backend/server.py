@@ -313,6 +313,14 @@ async def verify_otp(request: OTPVerify):
     if not verify_mock_otp(request.phone, request.otp):
         raise HTTPException(status_code=400, detail="Invalid OTP")
     
+    # ADMIN SECURITY: Only authorized phone number can login as admin
+    AUTHORIZED_ADMIN_PHONE = "9345538164"
+    if request.role == UserRole.ADMIN:
+        if request.phone != AUTHORIZED_ADMIN_PHONE:
+            raise HTTPException(status_code=403, detail="Access Denied")
+        # Admin login successful
+        return {"success": True, "user": {"phone": request.phone, "role": "admin"}, "new_user": False}
+    
     if request.role == UserRole.CUSTOMER:
         user = await db.users.find_one({"phone": request.phone})
         if user:
