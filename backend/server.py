@@ -78,13 +78,6 @@ class PersonalDetails(BaseModel):
     driving_experience_years: int
     driver_photo: str
 
-class BankDetails(BaseModel):
-    account_holder_name: str
-    bank_name: str
-    account_number: str
-    ifsc_code: str
-    branch_name: str
-
 class VehicleDetails(BaseModel):
     vehicle_type: VehicleType
     vehicle_number: str
@@ -119,7 +112,6 @@ class DriverAgreement(BaseModel):
 class ComprehensiveDriverRegister(BaseModel):
     phone: str
     personal_details: PersonalDetails
-    bank_details: BankDetails
     vehicle_details: VehicleDetails
     documents: Documents
     document_expiry: DocumentExpiry
@@ -469,12 +461,6 @@ async def register_driver_kyc(driver_data: ComprehensiveDriverRegister):
     if len(driver_data.personal_details.pan_number) != 10:
         raise HTTPException(status_code=400, detail="PAN must be 10 characters")
     
-    if len(driver_data.bank_details.ifsc_code) != 11:
-        raise HTTPException(status_code=400, detail="IFSC must be 11 characters")
-    
-    if len(driver_data.bank_details.account_number) < 9 or len(driver_data.bank_details.account_number) > 18:
-        raise HTTPException(status_code=400, detail="Invalid account number")
-    
     # Check expiry dates
     try:
         insurance_exp = date.fromisoformat(driver_data.document_expiry.insurance_expiry)
@@ -504,8 +490,6 @@ async def register_driver_kyc(driver_data: ComprehensiveDriverRegister):
             "driving_experience_years": driver_data.personal_details.driving_experience_years,
             "driver_photo": driver_data.personal_details.driver_photo
         },
-        
-        "bank_details": driver_data.bank_details.dict(),
         
         "vehicle_details": {
             "vehicle_type": driver_data.vehicle_details.vehicle_type.value,
