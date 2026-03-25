@@ -669,6 +669,339 @@ class VKDropTaxiTester:
         except Exception as e:
             self.log_result("Check Updated Admin Stats", False, f"Exception: {str(e)}")
     
+    def test_kyc_system(self):
+        """Test comprehensive KYC system end-to-end"""
+        print("\n=== Testing KYC System End-to-End ===")
+        
+        # Test 1: Driver KYC Registration with comprehensive data
+        try:
+            from datetime import date, timedelta
+            
+            # Future dates for document expiry
+            future_date = (date.today() + timedelta(days=365)).isoformat()
+            
+            kyc_data = {
+                "phone": "+919876543299",
+                "personal_details": {
+                    "full_name": "Arjun Sharma",
+                    "mobile_number": "+919876543299",
+                    "full_address": "123 MG Road, Bangalore, Karnataka 560001",
+                    "aadhaar_number": "123456789012",
+                    "pan_number": "ABCDE1234F",
+                    "driving_license_number": "KA0520110012345",
+                    "driving_experience_years": 5,
+                    "driver_photo": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                },
+                "bank_details": {
+                    "account_holder_name": "Arjun Sharma",
+                    "bank_name": "State Bank of India",
+                    "account_number": "12345678901234",
+                    "ifsc_code": "SBIN0001234",
+                    "branch_name": "MG Road Branch"
+                },
+                "vehicle_details": {
+                    "vehicle_type": "sedan",
+                    "vehicle_number": "KA01AB1234",
+                    "vehicle_model": "Honda City",
+                    "vehicle_year": 2020
+                },
+                "documents": {
+                    "aadhaar_card": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
+                        "back_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    },
+                    "pan_card": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    },
+                    "driving_license": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
+                        "back_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    },
+                    "rc_book": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    },
+                    "insurance": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    },
+                    "fitness_certificate": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    },
+                    "permit": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    },
+                    "pollution_certificate": {
+                        "front_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                    }
+                },
+                "document_expiry": {
+                    "insurance_expiry": future_date,
+                    "fc_expiry": future_date,
+                    "permit_expiry": future_date,
+                    "pollution_expiry": future_date,
+                    "license_expiry": future_date
+                },
+                "driver_vehicle_photo": {
+                    "photo": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                }
+            }
+            
+            response = self.session.post(f"{self.base_url}/driver/register-kyc", json=kyc_data)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("driver_id"):
+                    kyc_driver_id = data["driver_id"]
+                    approval_status = data.get("approval_status")
+                    self.test_data["kyc_driver_id"] = kyc_driver_id
+                    self.log_result("KYC Driver Registration", True, 
+                        f"KYC driver registered with ID: {kyc_driver_id}, Status: {approval_status}")
+                    
+                    # Verify wallet was created with minimum balance requirement
+                    wallet_response = self.session.get(f"{self.base_url}/wallet/{kyc_driver_id}")
+                    if wallet_response.status_code == 200:
+                        wallet_data = wallet_response.json()
+                        min_balance = wallet_data.get("wallet", {}).get("minimum_balance_required")
+                        if min_balance == 1000.0:
+                            self.log_result("KYC Wallet Creation", True, "Wallet created with minimum_balance_required=1000")
+                        else:
+                            self.log_result("KYC Wallet Creation", False, f"Expected minimum_balance_required=1000, got {min_balance}")
+                    else:
+                        self.log_result("KYC Wallet Creation", False, "Failed to retrieve wallet")
+                else:
+                    self.log_result("KYC Driver Registration", False, "Invalid response format", data)
+            else:
+                self.log_result("KYC Driver Registration", False, f"HTTP {response.status_code}", response.text)
+        except Exception as e:
+            self.log_result("KYC Driver Registration", False, f"Exception: {str(e)}")
+        
+        # Test 2: Test validation errors
+        try:
+            invalid_kyc_data = {
+                "phone": "+919876543298",
+                "personal_details": {
+                    "full_name": "Test Driver",
+                    "mobile_number": "+919876543298",
+                    "full_address": "Test Address",
+                    "aadhaar_number": "12345",  # Invalid - should be 12 digits
+                    "pan_number": "ABC123",     # Invalid - should be 10 chars
+                    "driving_license_number": "TEST123",
+                    "driving_experience_years": 3,
+                    "driver_photo": "data:image/jpeg;base64,test"
+                },
+                "bank_details": {
+                    "account_holder_name": "Test Driver",
+                    "bank_name": "Test Bank",
+                    "account_number": "123",    # Invalid - too short
+                    "ifsc_code": "TEST123",     # Invalid - should be 11 chars
+                    "branch_name": "Test Branch"
+                },
+                "vehicle_details": {
+                    "vehicle_type": "sedan",
+                    "vehicle_number": "TEST123",
+                    "vehicle_model": "Test Car",
+                    "vehicle_year": 2020
+                },
+                "documents": {
+                    "aadhaar_card": {"front_image": "test"},
+                    "pan_card": {"front_image": "test"},
+                    "driving_license": {"front_image": "test"},
+                    "rc_book": {"front_image": "test"},
+                    "insurance": {"front_image": "test"},
+                    "fitness_certificate": {"front_image": "test"},
+                    "permit": {"front_image": "test"},
+                    "pollution_certificate": {"front_image": "test"}
+                },
+                "document_expiry": {
+                    "insurance_expiry": "2025-12-31",
+                    "fc_expiry": "2025-12-31",
+                    "permit_expiry": "2025-12-31",
+                    "pollution_expiry": "2025-12-31",
+                    "license_expiry": "2025-12-31"
+                },
+                "driver_vehicle_photo": {"photo": "test"}
+            }
+            
+            response = self.session.post(f"{self.base_url}/driver/register-kyc", json=invalid_kyc_data)
+            
+            if response.status_code == 400:
+                self.log_result("KYC Validation Tests", True, "Correctly rejected invalid data")
+            else:
+                self.log_result("KYC Validation Tests", False, f"Should return 400, got {response.status_code}")
+        except Exception as e:
+            self.log_result("KYC Validation Tests", False, f"Exception: {str(e)}")
+        
+        # Test 3: Get pending drivers for verification
+        try:
+            response = self.session.get(f"{self.base_url}/admin/drivers/pending-verification")
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and isinstance(data.get("pending_drivers"), list):
+                    pending_count = len(data["pending_drivers"])
+                    # Check if our KYC driver is in the list
+                    kyc_driver_found = False
+                    if "kyc_driver_id" in self.test_data:
+                        for driver in data["pending_drivers"]:
+                            if driver.get("driver_id") == self.test_data["kyc_driver_id"]:
+                                kyc_driver_found = True
+                                break
+                    
+                    if kyc_driver_found:
+                        self.log_result("Get Pending Drivers", True, f"Found {pending_count} pending drivers including our KYC driver")
+                    else:
+                        self.log_result("Get Pending Drivers", True, f"Found {pending_count} pending drivers")
+                else:
+                    self.log_result("Get Pending Drivers", False, "Invalid response format", data)
+            else:
+                self.log_result("Get Pending Drivers", False, f"HTTP {response.status_code}", response.text)
+        except Exception as e:
+            self.log_result("Get Pending Drivers", False, f"Exception: {str(e)}")
+        
+        # Test 4: Get driver details for verification
+        if "kyc_driver_id" in self.test_data:
+            try:
+                kyc_driver_id = self.test_data["kyc_driver_id"]
+                response = self.session.get(f"{self.base_url}/admin/driver/{kyc_driver_id}/verification-view")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success") and data.get("driver", {}).get("driver_id") == kyc_driver_id:
+                        driver_data = data["driver"]
+                        has_personal_details = "personal_details" in driver_data
+                        has_bank_details = "bank_details" in driver_data
+                        has_documents = "documents" in driver_data
+                        has_expiry_alerts = "expiry_alerts" in driver_data
+                        
+                        if all([has_personal_details, has_bank_details, has_documents, has_expiry_alerts]):
+                            self.log_result("Get Driver Verification View", True, "Complete driver details retrieved with expiry alerts")
+                        else:
+                            missing = []
+                            if not has_personal_details: missing.append("personal_details")
+                            if not has_bank_details: missing.append("bank_details")
+                            if not has_documents: missing.append("documents")
+                            if not has_expiry_alerts: missing.append("expiry_alerts")
+                            self.log_result("Get Driver Verification View", False, f"Missing fields: {missing}")
+                    else:
+                        self.log_result("Get Driver Verification View", False, "Driver data mismatch", data)
+                else:
+                    self.log_result("Get Driver Verification View", False, f"HTTP {response.status_code}", response.text)
+            except Exception as e:
+                self.log_result("Get Driver Verification View", False, f"Exception: {str(e)}")
+        
+        # Test 5: Approve driver
+        if "kyc_driver_id" in self.test_data:
+            try:
+                kyc_driver_id = self.test_data["kyc_driver_id"]
+                response = self.session.put(f"{self.base_url}/admin/driver/approve", 
+                    json={"driver_id": kyc_driver_id, "approval_status": "approved"})
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success"):
+                        self.log_result("Approve KYC Driver", True, "KYC driver approved successfully")
+                        self.test_data["kyc_driver_approved"] = True
+                    else:
+                        self.log_result("Approve KYC Driver", False, "Approval failed", data)
+                else:
+                    self.log_result("Approve KYC Driver", False, f"HTTP {response.status_code}", response.text)
+            except Exception as e:
+                self.log_result("Approve KYC Driver", False, f"Exception: {str(e)}")
+        
+        # Test 6: Verify driver status changed to approved
+        if "kyc_driver_id" in self.test_data and self.test_data.get("kyc_driver_approved"):
+            try:
+                kyc_driver_id = self.test_data["kyc_driver_id"]
+                response = self.session.get(f"{self.base_url}/driver/{kyc_driver_id}/profile-complete")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success"):
+                        driver = data.get("driver", {})
+                        approval_status = driver.get("approval_status")
+                        if approval_status == "approved":
+                            self.log_result("Verify Driver Status Change", True, "Driver status successfully changed to 'approved'")
+                        else:
+                            self.log_result("Verify Driver Status Change", False, f"Expected 'approved', got '{approval_status}'")
+                    else:
+                        self.log_result("Verify Driver Status Change", False, "Failed to get driver profile", data)
+                else:
+                    self.log_result("Verify Driver Status Change", False, f"HTTP {response.status_code}", response.text)
+            except Exception as e:
+                self.log_result("Verify Driver Status Change", False, f"Exception: {str(e)}")
+        
+        # Test 7: Get complete driver profile
+        if "kyc_driver_id" in self.test_data:
+            try:
+                kyc_driver_id = self.test_data["kyc_driver_id"]
+                response = self.session.get(f"{self.base_url}/driver/{kyc_driver_id}/profile-complete")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success") and data.get("driver"):
+                        driver = data["driver"]
+                        has_all_sections = all(key in driver for key in [
+                            "personal_details", "bank_details", "vehicle_details", 
+                            "documents", "document_expiry", "expiry_alerts"
+                        ])
+                        
+                        if has_all_sections:
+                            self.log_result("Get Complete Driver Profile", True, "Complete KYC profile retrieved successfully")
+                        else:
+                            self.log_result("Get Complete Driver Profile", False, "Missing profile sections")
+                    else:
+                        self.log_result("Get Complete Driver Profile", False, "Invalid response format", data)
+                else:
+                    self.log_result("Get Complete Driver Profile", False, f"HTTP {response.status_code}", response.text)
+            except Exception as e:
+                self.log_result("Get Complete Driver Profile", False, f"Exception: {str(e)}")
+        
+        # Test 8: Get expiry alerts
+        if "kyc_driver_id" in self.test_data:
+            try:
+                kyc_driver_id = self.test_data["kyc_driver_id"]
+                response = self.session.get(f"{self.base_url}/driver/{kyc_driver_id}/expiry-alerts")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success") and "expiry_alerts" in data:
+                        alerts = data["expiry_alerts"]
+                        has_all_expiries = "all_expiries" in alerts
+                        has_critical_alerts = "critical_alerts" in alerts
+                        
+                        if has_all_expiries and has_critical_alerts:
+                            critical_count = len(alerts.get("critical_alerts", []))
+                            self.log_result("Get Expiry Alerts", True, f"Expiry alerts retrieved, {critical_count} critical alerts")
+                        else:
+                            self.log_result("Get Expiry Alerts", False, "Missing expiry alert fields")
+                    else:
+                        self.log_result("Get Expiry Alerts", False, "Invalid response format", data)
+                else:
+                    self.log_result("Get Expiry Alerts", False, f"HTTP {response.status_code}", response.text)
+            except Exception as e:
+                self.log_result("Get Expiry Alerts", False, f"Exception: {str(e)}")
+        
+        # Test 9: Test auth flow with expiry alerts
+        try:
+            response = self.session.post(f"{self.base_url}/auth/verify-otp", 
+                json={"phone": "+919876543299", "otp": "123456", "role": "driver"})
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and not data.get("new_user"):
+                    user_data = data.get("user", {})
+                    has_expiry_alerts = "expiry_alerts" in user_data
+                    
+                    if has_expiry_alerts:
+                        self.log_result("Auth with Expiry Alerts", True, "Driver auth returned expiry alerts")
+                    else:
+                        self.log_result("Auth with Expiry Alerts", False, "Missing expiry alerts in auth response")
+                else:
+                    self.log_result("Auth with Expiry Alerts", False, "Should return existing user with expiry alerts", data)
+            else:
+                self.log_result("Auth with Expiry Alerts", False, f"HTTP {response.status_code}", response.text)
+        except Exception as e:
+            self.log_result("Auth with Expiry Alerts", False, f"Exception: {str(e)}")
+
     def run_all_tests(self):
         """Run all test suites"""
         print(f"🚀 Starting VK Drop Taxi Backend API Tests")
@@ -684,6 +1017,9 @@ class VKDropTaxiTester:
         self.test_booking_apis()
         self.test_wallet_apis()
         self.test_post_completion_checks()
+        
+        # NEW: Test KYC System
+        self.test_kyc_system()
         
         # Summary
         print("\n" + "=" * 60)

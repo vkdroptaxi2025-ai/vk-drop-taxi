@@ -262,6 +262,14 @@ export default function AdminDashboard() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.verifyButton}
+          onPress={() => router.push('/admin/driver-verification')}
+        >
+          <Ionicons name="shield-checkmark" size={20} color={Colors.white} />
+          <Text style={styles.verifyButtonText}>Verify</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'customers' && styles.activeTab]}
           onPress={() => setActiveTab('customers')}
         >
@@ -401,6 +409,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+    alignItems: 'center',
   },
   tab: {
     flex: 1,
@@ -409,6 +418,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 16,
     gap: 8,
+  },
+  verifyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.secondary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginRight: 8,
+    borderRadius: 20,
+    gap: 4,
+  },
+  verifyButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.white,
   },
   activeTab: {
     borderBottomWidth: 3,
