@@ -267,4 +267,658 @@ async def check_all_driver_expiries(driver_id: str) -> dict:
         "has_expiring_documents": any(a['alert_level'] == 'warning' for a in alerts.values())
     }
 
-# Due to length, I'll split this into multiple parts. Continuing in next file...
+# ==================== AUTH ENDPOINTS ====================
+@api_router.post("/auth/send-otp")
+async def send_otp(request: OTPRequest):
+    result = send_mock_otp(request.phone)
+    return {"success": True, "message": result['message'], "otp_mock": "123456"}
+
+@api_router.post("/auth/verify-otp")
+async def verify_otp(request: OTPVerify):
+    if not verify_mock_otp(request.phone, request.otp):
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    
+    if request.role == UserRole.CUSTOMER:
+        user = await db.users.find_one({"phone": request.phone})
+        if user:
+            user['_id'] = str(user['_id'])
+            return {"success": True, "user": user, "new_user": False}
+        return {"success": True, "new_user": True, "phone": request.phone}
+    
+    elif request.role == UserRole.DRIVER:
+        driver = await db.drivers.find_one({"phone": request.phone})
+        if driver:
+            driver['_id'] = str(driver['_id'])
+            expiry_alerts = await check_all_driver_expiries(driver['driver_id'])
+            driver['expiry_alerts'] = expiry_alerts
+            return {"success": True, "user": driver, "new_user": False}
+        return {"success": True, "new_user": True, "phone": request.phone}
+    
+    return {"success": False, "message": "Invalid role"}
+
+# ==================== CUSTOMER ENDPOINTS ====================
+@api_router.post("/customer/register")
+async def register_customer(customer: CustomerRegister):
+    existing = await db.users.find_one({"phone": customer.phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Customer already exists")
+    
+    user_data = {
+        "user_id": str(uuid.uuid4()),
+        "phone": customer.phone,
+        "name": customer.name,
+        "location": customer.location.dict() if customer.location else None,
+        "role": UserRole.CUSTOMER.value,
+        "created_at": datetime.utcnow()
+    }
+    
+    await db.users.insert_one(user_data)
+    
+    wallet_data = {
+        "user_id": user_data['user_id'],
+        "balance": 0.0,
+        "transactions": []
+    }
+    await db.wallets.insert_one(wallet_data)
+    
+    user_data['_id'] = str(user_data.get('_id'))
+    return {"success": True, "user": user_data}
+
+@api_router.get("/customer/{customer_id}/profile")
+async def get_customer_profile(customer_id: str):
+    user = await db.users.find_one({"user_id": customer_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    user['_id'] = str(user['_id'])
+    return {"success": True, "user": user}
+
+@api_router.get("/customer/{customer_id}/bookings")
+async def get_customer_bookings(customer_id: str):
+    bookings = await db.bookings.find({"customer_id": customer_id}).sort("created_at", -1).to_list(100)
+    for booking in bookings:
+        booking['_id'] = str(booking['_id'])
+    return {"success": True, "bookings": bookings}
+
+# ==================== PHASE 1: DRIVER KYC REGISTRATION ====================
+@api_router.post("/driver/register-kyc")
+async def register_driver_kyc(driver_data: ComprehensiveDriverRegister):
+    """
+    Essential Phase 1: Complete KYC registration with all required fields
+    Single image upload per document
+    """
+    # Check existing
+    existing = await db.drivers.find_one({"phone": driver_data.phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Driver already registered with this phone")
+    
+    # Validation
+    if len(driver_data.personal_details.aadhaar_number) != 12 or not driver_data.personal_details.aadhaar_number.isdigit():
+        raise HTTPException(status_code=400, detail="Aadhaar must be 12 digits")
+    
+    if len(driver_data.personal_details.pan_number) != 10:
+        raise HTTPException(status_code=400, detail="PAN must be 10 characters")
+    
+    if len(driver_data.bank_details.ifsc_code) != 11:
+        raise HTTPException(status_code=400, detail="IFSC must be 11 characters")
+    
+    if len(driver_data.bank_details.account_number) < 9 or len(driver_data.bank_details.account_number) > 18:
+        raise HTTPException(status_code=400, detail="Invalid account number")
+    
+    # Check expiry dates
+    try:
+        insurance_exp = date.fromisoformat(driver_data.document_expiry.insurance_expiry)
+        license_exp = date.fromisoformat(driver_data.document_expiry.license_expiry)
+        
+        if insurance_exp < date.today():
+            raise HTTPException(status_code=400, detail="Insurance has expired")
+        if license_exp < date.today():
+            raise HTTPException(status_code=400, detail="Driving license has expired")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    driver_id = str(uuid.uuid4())
+    
+    driver_document = {
+        "driver_id": driver_id,
+        "phone": driver_data.phone,
+        "role": UserRole.DRIVER.value,
+        
+        "personal_details": {
+            "full_name": driver_data.personal_details.full_name,
+            "mobile_number": driver_data.personal_details.mobile_number,
+            "full_address": driver_data.personal_details.full_address,
+            "aadhaar_number": driver_data.personal_details.aadhaar_number,
+            "pan_number": driver_data.personal_details.pan_number.upper(),
+            "driving_license_number": driver_data.personal_details.driving_license_number,
+            "driving_experience_years": driver_data.personal_details.driving_experience_years,
+            "driver_photo": driver_data.personal_details.driver_photo
+        },
+        
+        "bank_details": driver_data.bank_details.dict(),
+        
+        "vehicle_details": {
+            "vehicle_type": driver_data.vehicle_details.vehicle_type.value,
+            "vehicle_number": driver_data.vehicle_details.vehicle_number.upper(),
+            "vehicle_model": driver_data.vehicle_details.vehicle_model,
+            "vehicle_year": driver_data.vehicle_details.vehicle_year
+        },
+        
+        "documents": {
+            "aadhaar_card": driver_data.documents.aadhaar_card.dict(),
+            "pan_card": driver_data.documents.pan_card.dict(),
+            "driving_license": driver_data.documents.driving_license.dict(),
+            "rc_book": driver_data.documents.rc_book.dict(),
+            "insurance": driver_data.documents.insurance.dict(),
+            "fitness_certificate": driver_data.documents.fitness_certificate.dict(),
+            "permit": driver_data.documents.permit.dict(),
+            "pollution_certificate": driver_data.documents.pollution_certificate.dict()
+        },
+        
+        "document_expiry": {
+            "insurance_expiry": driver_data.document_expiry.insurance_expiry,
+            "fc_expiry": driver_data.document_expiry.fc_expiry,
+            "permit_expiry": driver_data.document_expiry.permit_expiry,
+            "pollution_expiry": driver_data.document_expiry.pollution_expiry,
+            "license_expiry": driver_data.document_expiry.license_expiry
+        },
+        
+        "driver_vehicle_photo": driver_data.driver_vehicle_photo.photo,
+        
+        "approval_status": DriverApprovalStatus.PENDING.value,
+        "approval_remarks": None,
+        
+        "driver_status": DriverStatus.OFFLINE.value,
+        "is_online": False,
+        "duty_on": False,
+        
+        "earnings": 0.0,
+        "total_trips": 0,
+        "completed_trips": 0,
+        
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    await db.drivers.insert_one(driver_document)
+    
+    wallet_data = {
+        "user_id": driver_id,
+        "balance": 0.0,
+        "transactions": [],
+        "minimum_balance_required": 1000.0
+    }
+    await db.wallets.insert_one(wallet_data)
+    
+    return {
+        "success": True,
+        "driver_id": driver_id,
+        "message": "Registration submitted successfully. Awaiting admin approval.",
+        "approval_status": DriverApprovalStatus.PENDING.value
+    }
+
+@api_router.get("/driver/{driver_id}/profile-complete")
+async def get_driver_profile_complete(driver_id: str):
+    """Get complete driver profile with all KYC details"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    driver['_id'] = str(driver['_id'])
+    
+    # Check expiries
+    expiry_alerts = await check_all_driver_expiries(driver_id)
+    driver['expiry_alerts'] = expiry_alerts
+    
+    return {"success": True, "driver": driver}
+
+@api_router.get("/driver/{driver_id}/expiry-alerts")
+async def get_driver_expiry_alerts(driver_id: str):
+    """Get document expiry alerts for driver"""
+    alerts = await check_all_driver_expiries(driver_id)
+    if not alerts:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    return {"success": True, "expiry_alerts": alerts}
+
+# ==================== ADMIN KYC VERIFICATION ENDPOINTS ====================
+@api_router.get("/admin/drivers/pending-verification")
+async def get_pending_drivers():
+    """Get all drivers awaiting verification"""
+    drivers = await db.drivers.find({
+        "approval_status": DriverApprovalStatus.PENDING.value
+    }).sort("created_at", -1).to_list(100)
+    
+    for driver in drivers:
+        driver['_id'] = str(driver['_id'])
+        # Add expiry alerts
+        alerts = await check_all_driver_expiries(driver['driver_id'])
+        driver['expiry_alerts'] = alerts
+    
+    return {"success": True, "pending_drivers": drivers}
+
+@api_router.get("/admin/driver/{driver_id}/verification-view")
+async def get_driver_for_verification(driver_id: str):
+    """Get complete driver details for admin verification"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    driver['_id'] = str(driver['_id'])
+    
+    # Add expiry alerts
+    alerts = await check_all_driver_expiries(driver_id)
+    driver['expiry_alerts'] = alerts
+    
+    return {"success": True, "driver": driver}
+
+@api_router.put("/admin/driver/approve")
+async def approve_driver(approval: DriverApproval):
+    """Approve or reject driver application"""
+    driver = await db.drivers.find_one({"driver_id": approval.driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    await db.drivers.update_one(
+        {"driver_id": approval.driver_id},
+        {
+            "$set": {
+                "approval_status": approval.approval_status.value,
+                "approval_remarks": approval.rejection_reason,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return {
+        "success": True,
+        "message": f"Driver {approval.approval_status.value}",
+        "driver_id": approval.driver_id
+    }
+
+# ==================== LEGACY DRIVER ENDPOINTS (keeping for compatibility) ====================
+@api_router.post("/driver/register")
+async def register_driver_legacy(driver: DriverRegister):
+    """Legacy driver registration - kept for backward compatibility"""
+    existing = await db.drivers.find_one({"phone": driver.phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Driver already exists")
+    
+    driver_data = {
+        "driver_id": str(uuid.uuid4()),
+        "phone": driver.phone,
+        "name": driver.name,
+        "vehicle_type": driver.vehicle_type.value,
+        "vehicle_number": driver.vehicle_number,
+        "license_image": driver.license_image,
+        "rc_image": driver.rc_image,
+        "approval_status": DriverApprovalStatus.PENDING.value,
+        "is_online": False,
+        "earnings": 0.0,
+        "current_location": None,
+        "role": UserRole.DRIVER.value,
+        "created_at": datetime.utcnow()
+    }
+    
+    await db.drivers.insert_one(driver_data)
+    
+    wallet_data = {
+        "user_id": driver_data['driver_id'],
+        "balance": 0.0,
+        "transactions": []
+    }
+    await db.wallets.insert_one(wallet_data)
+    
+    driver_data['_id'] = str(driver_data.get('_id'))
+    return {"success": True, "driver": driver_data, "message": "Driver registered. Waiting for admin approval."}
+
+@api_router.get("/driver/{driver_id}/profile")
+async def get_driver_profile(driver_id: str):
+    """Get driver profile"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    driver['_id'] = str(driver['_id'])
+    return {"success": True, "driver": driver}
+
+@api_router.put("/driver/{driver_id}/status")
+async def update_driver_status(driver_id: str, status_update: DriverStatusUpdate):
+    """Update driver online/offline status"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    if driver['approval_status'] != DriverApprovalStatus.APPROVED.value:
+        raise HTTPException(status_code=403, detail="Driver not approved yet")
+    
+    await db.drivers.update_one(
+        {"driver_id": driver_id},
+        {"$set": {"is_online": status_update.is_online}}
+    )
+    
+    return {"success": True, "is_online": status_update.is_online}
+
+@api_router.get("/driver/{driver_id}/rides")
+async def get_driver_rides(driver_id: str):
+    """Get driver ride history"""
+    bookings = await db.bookings.find({"driver_id": driver_id}).sort("created_at", -1).to_list(100)
+    for booking in bookings:
+        booking['_id'] = str(booking['_id'])
+    return {"success": True, "rides": bookings}
+
+@api_router.get("/driver/{driver_id}/pending-rides")
+async def get_pending_rides(driver_id: str):
+    """Get pending ride requests for driver"""
+    bookings = await db.bookings.find({
+        "driver_id": driver_id,
+        "status": BookingStatus.REQUESTED.value
+    }).to_list(100)
+    
+    for booking in bookings:
+        booking['_id'] = str(booking['_id'])
+    
+    return {"success": True, "pending_rides": bookings}
+
+@api_router.get("/driver/{driver_id}/earnings")
+async def get_driver_earnings(driver_id: str):
+    """Get driver earnings summary"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    completed_rides = await db.bookings.find({
+        "driver_id": driver_id,
+        "status": BookingStatus.COMPLETED.value
+    }).to_list(1000)
+    
+    total_rides = len(completed_rides)
+    total_earnings = sum(ride.get('driver_earning', 0) for ride in completed_rides)
+    
+    return {
+        "success": True,
+        "total_rides": total_rides,
+        "total_earnings": total_earnings,
+        "wallet_balance": driver.get('earnings', 0)
+    }
+
+# ==================== BOOKING ENDPOINTS ====================
+@api_router.post("/booking/create")
+async def create_booking(booking: BookingCreate):
+    """Create new booking and auto-assign driver"""
+    distance = calculate_mock_distance(booking.pickup, booking.drop)
+    fare = await calculate_fare(distance, booking.vehicle_type)
+    
+    # Find available driver
+    driver = await db.drivers.find_one({
+        "vehicle_details.vehicle_type": booking.vehicle_type.value,
+        "is_online": True,
+        "approval_status": DriverApprovalStatus.APPROVED.value
+    })
+    
+    if not driver:
+        raise HTTPException(status_code=404, detail="No drivers available")
+    
+    commission = fare * 0.10
+    driver_earning = fare - commission
+    
+    booking_data = {
+        "booking_id": str(uuid.uuid4()),
+        "customer_id": booking.customer_id,
+        "driver_id": driver['driver_id'],
+        "pickup": booking.pickup.dict(),
+        "drop": booking.drop.dict(),
+        "vehicle_type": booking.vehicle_type.value,
+        "distance": distance,
+        "fare": round(fare, 2),
+        "commission": round(commission, 2),
+        "driver_earning": round(driver_earning, 2),
+        "status": BookingStatus.REQUESTED.value,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    await db.bookings.insert_one(booking_data)
+    
+    booking_data['_id'] = str(booking_data.get('_id'))
+    booking_data['driver_name'] = driver.get('personal_details', {}).get('full_name', driver.get('name', 'Driver'))
+    booking_data['driver_phone'] = driver.get('phone', '')
+    booking_data['vehicle_number'] = driver.get('vehicle_details', {}).get('vehicle_number', driver.get('vehicle_number', ''))
+    
+    return {"success": True, "booking": booking_data}
+
+@api_router.put("/booking/update")
+async def update_booking(update: BookingUpdate):
+    """Update booking status"""
+    booking = await db.bookings.find_one({"booking_id": update.booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    update_data = {
+        "status": update.status.value,
+        "updated_at": datetime.utcnow()
+    }
+    
+    if update.status == BookingStatus.COMPLETED:
+        driver_earning = booking.get('driver_earning', 0)
+        await db.drivers.update_one(
+            {"driver_id": booking['driver_id']},
+            {"$inc": {"earnings": driver_earning, "completed_trips": 1}}
+        )
+    
+    await db.bookings.update_one(
+        {"booking_id": update.booking_id},
+        {"$set": update_data}
+    )
+    
+    return {"success": True, "message": "Booking updated"}
+
+@api_router.get("/booking/{booking_id}")
+async def get_booking(booking_id: str):
+    """Get booking details"""
+    booking = await db.bookings.find_one({"booking_id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    booking['_id'] = str(booking['_id'])
+    
+    customer = await db.users.find_one({"user_id": booking['customer_id']})
+    driver = await db.drivers.find_one({"driver_id": booking['driver_id']})
+    
+    if customer:
+        booking['customer_name'] = customer['name']
+        booking['customer_phone'] = customer['phone']
+    
+    if driver:
+        booking['driver_name'] = driver.get('personal_details', {}).get('full_name', driver.get('name', 'Driver'))
+        booking['driver_phone'] = driver.get('phone', '')
+        booking['vehicle_number'] = driver.get('vehicle_details', {}).get('vehicle_number', driver.get('vehicle_number', ''))
+    
+    return {"success": True, "booking": booking}
+
+# ==================== WALLET ENDPOINTS ====================
+@api_router.get("/wallet/{user_id}")
+async def get_wallet(user_id: str):
+    """Get wallet details"""
+    wallet = await db.wallets.find_one({"user_id": user_id})
+    if not wallet:
+        wallet = {
+            "user_id": user_id,
+            "balance": 0.0,
+            "transactions": []
+        }
+        await db.wallets.insert_one(wallet)
+    
+    wallet['_id'] = str(wallet.get('_id'))
+    return {"success": True, "wallet": wallet}
+
+@api_router.post("/wallet/add-money")
+async def add_money(request: WalletAddMoney):
+    """Add money to wallet (Mock payment)"""
+    wallet = await db.wallets.find_one({"user_id": request.user_id})
+    
+    if not wallet:
+        wallet = {
+            "user_id": request.user_id,
+            "balance": 0.0,
+            "transactions": []
+        }
+        await db.wallets.insert_one(wallet)
+    
+    transaction = {
+        "transaction_id": str(uuid.uuid4()),
+        "amount": request.amount,
+        "type": "credit",
+        "description": "Money added to wallet",
+        "timestamp": datetime.utcnow()
+    }
+    
+    await db.wallets.update_one(
+        {"user_id": request.user_id},
+        {
+            "$inc": {"balance": request.amount},
+            "$push": {"transactions": transaction}
+        }
+    )
+    
+    return {"success": True, "message": "Money added successfully", "new_balance": wallet['balance'] + request.amount}
+
+@api_router.post("/wallet/withdraw")
+async def withdraw_money(request: WithdrawRequest):
+    """Driver withdraw request"""
+    driver = await db.drivers.find_one({"driver_id": request.driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    if driver['earnings'] < request.amount:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+    
+    await db.drivers.update_one(
+        {"driver_id": request.driver_id},
+        {"$inc": {"earnings": -request.amount}}
+    )
+    
+    withdrawal = {
+        "withdrawal_id": str(uuid.uuid4()),
+        "driver_id": request.driver_id,
+        "amount": request.amount,
+        "status": "pending",
+        "created_at": datetime.utcnow()
+    }
+    await db.withdrawals.insert_one(withdrawal)
+    
+    return {"success": True, "message": "Withdrawal request submitted"}
+
+# ==================== ADMIN ENDPOINTS ====================
+@api_router.get("/admin/drivers")
+async def get_all_drivers():
+    """Get all drivers"""
+    drivers = await db.drivers.find().sort("created_at", -1).to_list(1000)
+    for driver in drivers:
+        driver['_id'] = str(driver['_id'])
+    return {"success": True, "drivers": drivers}
+
+@api_router.get("/admin/customers")
+async def get_all_customers():
+    """Get all customers"""
+    customers = await db.users.find({"role": UserRole.CUSTOMER.value}).to_list(1000)
+    for customer in customers:
+        customer['_id'] = str(customer['_id'])
+    return {"success": True, "customers": customers}
+
+@api_router.get("/admin/bookings")
+async def get_all_bookings():
+    """Get all bookings"""
+    bookings = await db.bookings.find().sort("created_at", -1).to_list(1000)
+    for booking in bookings:
+        booking['_id'] = str(booking['_id'])
+    return {"success": True, "bookings": bookings}
+
+@api_router.get("/admin/tariffs")
+async def get_tariffs():
+    """Get tariff settings"""
+    tariffs = await db.tariffs.find().to_list(100)
+    
+    if not tariffs:
+        default_tariffs = [
+            {
+                "vehicle_type": VehicleType.SEDAN.value,
+                "rate_per_km": 14.0,
+                "minimum_fare": 300.0
+            },
+            {
+                "vehicle_type": VehicleType.SUV.value,
+                "rate_per_km": 18.0,
+                "minimum_fare": 300.0
+            }
+        ]
+        await db.tariffs.insert_many(default_tariffs)
+        tariffs = default_tariffs
+    
+    for tariff in tariffs:
+        if '_id' in tariff:
+            tariff['_id'] = str(tariff['_id'])
+    
+    return {"success": True, "tariffs": tariffs}
+
+@api_router.put("/admin/update-tariff")
+async def update_tariff(tariff_update: TariffUpdate):
+    """Update tariff"""
+    await db.tariffs.update_one(
+        {"vehicle_type": tariff_update.vehicle_type.value},
+        {"$set": {
+            "rate_per_km": tariff_update.rate_per_km,
+            "minimum_fare": tariff_update.minimum_fare
+        }},
+        upsert=True
+    )
+    
+    return {"success": True, "message": "Tariff updated"}
+
+@api_router.get("/admin/stats")
+async def get_admin_stats():
+    """Get admin dashboard stats"""
+    total_customers = await db.users.count_documents({"role": UserRole.CUSTOMER.value})
+    total_drivers = await db.drivers.count_documents({})
+    pending_drivers = await db.drivers.count_documents({"approval_status": DriverApprovalStatus.PENDING.value})
+    approved_drivers = await db.drivers.count_documents({"approval_status": DriverApprovalStatus.APPROVED.value})
+    total_bookings = await db.bookings.count_documents({})
+    completed_bookings = await db.bookings.count_documents({"status": BookingStatus.COMPLETED.value})
+    
+    all_bookings = await db.bookings.find({"status": BookingStatus.COMPLETED.value}).to_list(10000)
+    total_revenue = sum(booking.get('fare', 0) for booking in all_bookings)
+    total_commission = sum(booking.get('commission', 0) for booking in all_bookings)
+    
+    return {
+        "success": True,
+        "stats": {
+            "total_customers": total_customers,
+            "total_drivers": total_drivers,
+            "pending_drivers": pending_drivers,
+            "approved_drivers": approved_drivers,
+            "total_bookings": total_bookings,
+            "completed_bookings": completed_bookings,
+            "total_revenue": round(total_revenue, 2),
+            "total_commission": round(total_commission, 2)
+        }
+    }
+
+# Include the router
+app.include_router(api_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
+
