@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -8,6 +8,7 @@ import {
   ScrollView,
   Animated,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../utils/colors';
@@ -17,10 +18,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
+// Admin authorized phone numbers
+const ADMIN_PHONES = ['9345538164'];
+
 export default function WelcomeScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
   const glowAnim = new Animated.Value(0.5);
+  
+  // Secret admin access - long press counter
+  const [logoTapCount, setLogoTapCount] = useState(0);
+  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Logo glow animation
@@ -55,8 +63,31 @@ export default function WelcomeScreen() {
     router.push(`/auth/login?role=${role}`);
   };
 
-  const handleAdminAccess = () => {
-    router.push('/admin/dashboard');
+  // Secret admin access - tap logo 5 times quickly
+  const handleLogoTap = () => {
+    // Clear previous timeout
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+    }
+
+    const newCount = logoTapCount + 1;
+    setLogoTapCount(newCount);
+
+    if (newCount >= 5) {
+      // 5 taps - show admin login
+      setLogoTapCount(0);
+      router.push('/auth/admin-login');
+    } else {
+      // Reset count after 2 seconds of no taps
+      tapTimeoutRef.current = setTimeout(() => {
+        setLogoTapCount(0);
+      }, 2000);
+    }
+  };
+
+  // Long press for admin access
+  const handleLogoLongPress = () => {
+    router.push('/auth/admin-login');
   };
 
   return (
@@ -69,8 +100,14 @@ export default function WelcomeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo Section with Glow */}
-          <View style={styles.logoSection}>
+          {/* Logo Section with Glow - Hidden Admin Access */}
+          <TouchableOpacity 
+            style={styles.logoSection}
+            onPress={handleLogoTap}
+            onLongPress={handleLogoLongPress}
+            delayLongPress={3000}
+            activeOpacity={1}
+          >
             <Animated.View 
               style={[
                 styles.logoGlow,
@@ -88,7 +125,7 @@ export default function WelcomeScreen() {
               style={styles.logo}
               resizeMode="contain"
             />
-          </View>
+          </TouchableOpacity>
 
           {/* Brand Text */}
           <Text style={styles.brandName}>VK DROP TAXI</Text>
@@ -185,16 +222,7 @@ export default function WelcomeScreen() {
             </LinearGradient>
           </View>
 
-          {/* Admin Access */}
-          <TouchableOpacity
-            style={styles.adminButton}
-            onPress={handleAdminAccess}
-          >
-            <Ionicons name="shield" size={18} color={Colors.textLight} />
-            <Text style={styles.adminButtonText}>Admin Access</Text>
-          </TouchableOpacity>
-
-          {/* Footer */}
+          {/* Footer - Admin Access REMOVED */}
           <View style={styles.footer}>
             <Text style={styles.footerText}>© 2024 VK Drop Taxi</Text>
             <Text style={styles.footerSubtext}>Premium Taxi Service</Text>
@@ -356,17 +384,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.text,
     marginTop: 4,
-  },
-  adminButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 8,
-  },
-  adminButtonText: {
-    fontSize: 14,
-    color: Colors.textLight,
   },
   footer: {
     alignItems: 'center',
