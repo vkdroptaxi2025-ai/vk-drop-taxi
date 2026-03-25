@@ -118,7 +118,11 @@ export default function RegisterDriverScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Ionicons name="car-sport" size={80} color={Colors.secondary} />
+          <Image
+            source={require('../../assets/images/vk-drop-logo.jpg')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>Driver Registration</Text>
           <Text style={styles.subtitle}>Complete your profile</Text>
         </View>
@@ -220,6 +224,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 32,
+  },
+  logo: {
+    width: 180,
+    height: 110,
+    marginBottom: 8,
   },
   title: {
     fontSize: 28,

@@ -33,9 +33,11 @@ export default function Index() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoContainer}>
-          <Ionicons name="car-sport" size={60} color={Colors.primary} />
-          <Text style={styles.appName}>VK Drop Taxi</Text>
-          <Text style={styles.tagline}>Your Reliable Ride Partner</Text>
+          <Image
+            source={require('../assets/images/vk-drop-logo.jpg')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
         </View>
       </View>
 
@@ -88,10 +90,15 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 30,
     alignItems: 'center',
-    backgroundColor: Colors.lightGray,
+    backgroundColor: Colors.primary,
   },
   logoContainer: {
     alignItems: 'center',
+    width: '100%',
+  },
+  logo: {
+    width: 280,
+    height: 180,
   },
   appName: {
     fontSize: 32,

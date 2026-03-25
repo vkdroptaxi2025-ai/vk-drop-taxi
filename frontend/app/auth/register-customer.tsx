@@ -57,7 +57,11 @@ export default function RegisterCustomerScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Ionicons name="person-add" size={80} color={Colors.primary} />
+          <Image
+            source={require('../../assets/images/vk-drop-logo.jpg')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>Complete Registration</Text>
           <Text style={styles.subtitle}>Tell us about yourself</Text>
         </View>
@@ -101,6 +105,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 40,
+  },
+  logo: {
+    width: 180,
+    height: 110,
+    marginBottom: 16,
   },
   title: {
     fontSize: 28,

@@ -87,10 +87,10 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Ionicons
-            name={role === 'customer' ? 'person-circle' : 'car'}
-            size={80}
-            color={role === 'customer' ? Colors.primary : Colors.secondary}
+          <Image
+            source={require('../../assets/images/vk-drop-logo.jpg')}
+            style={styles.logo}
+            resizeMode="contain"
           />
           <Text style={styles.title}>
             {role === 'customer' ? 'Customer' : 'Driver'} Login
@@ -174,6 +174,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 40,
+  },
+  logo: {
+    width: 200,
+    height: 120,
+    marginBottom: 16,
   },
   title: {
     fontSize: 28,
