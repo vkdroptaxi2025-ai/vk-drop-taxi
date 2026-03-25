@@ -114,14 +114,17 @@ export default function AdminDashboard() {
   };
 
   const handleApproveDriver = async (driverId: string, status: 'approved' | 'rejected', rejectionReason?: string) => {
+    console.log('Approving driver:', { driverId, status, rejectionReason });
     try {
-      await approveDriver(driverId, status, rejectionReason);
-      Alert.alert('Success', `Driver ${status}`);
+      const response = await approveDriver(driverId, status, rejectionReason);
+      console.log('Approve response:', response.data);
+      Alert.alert('Success', `Driver ${status} successfully!`);
       setSelectedDriver(null);
       fetchDrivers();
       fetchStats();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update driver status');
+    } catch (error: any) {
+      console.error('Approve error:', error.response?.data || error.message);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to update driver status');
     }
   };
 
@@ -771,18 +774,17 @@ export default function AdminDashboard() {
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.rejectBtn]}
                       onPress={() => {
-                        Alert.prompt(
+                        Alert.alert(
                           'Reject Driver',
-                          'Enter reason for rejection:',
+                          'Are you sure you want to reject this driver?',
                           [
                             { text: 'Cancel', style: 'cancel' },
                             { 
                               text: 'Reject', 
                               style: 'destructive',
-                              onPress: (reason) => handleApproveDriver(selectedDriver.driver_id, 'rejected', reason)
+                              onPress: () => handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Documents not verified')
                             }
-                          ],
-                          'plain-text'
+                          ]
                         );
                       }}
                     >
