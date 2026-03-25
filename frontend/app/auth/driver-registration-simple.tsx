@@ -27,7 +27,11 @@ export default function SimpleDriverRegistration() {
   const router = useRouter();
   const { phone } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
-  const [currentSection, setCurrentSection] = useState(1); // 1, 2, or 3
+  const [currentSection, setCurrentSection] = useState(1); // 1, 2, 3, or 4 (agreement)
+
+  // Agreement state
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [agreementFile, setAgreementFile] = useState('');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -228,16 +232,30 @@ export default function SimpleDriverRegistration() {
     return true;
   };
 
+  const validateAgreement = () => {
+    if (!agreementAccepted) {
+      Alert.alert('Validation Error', 'You must accept the terms and conditions');
+      return false;
+    }
+    if (!agreementFile) {
+      Alert.alert('Validation Error', 'Please upload signed agreement document');
+      return false;
+    }
+    return true;
+  };
+
   const handleNext = () => {
     if (currentSection === 1 && validateSection1()) {
       setCurrentSection(2);
     } else if (currentSection === 2 && validateSection2()) {
       setCurrentSection(3);
+    } else if (currentSection === 3 && validateSection3()) {
+      setCurrentSection(4);
     }
   };
 
   const handleSubmit = async () => {
-    if (!validateSection3()) return;
+    if (!validateAgreement()) return;
 
     setLoading(true);
     try {
@@ -287,6 +305,11 @@ export default function SimpleDriverRegistration() {
         },
         driver_vehicle_photo: {
           photo: formData.driver_vehicle_photo,
+        },
+        agreement: {
+          accepted: agreementAccepted,
+          agreement_file: agreementFile,
+          accepted_at: new Date().toISOString(),
         },
       };
 
@@ -349,7 +372,7 @@ export default function SimpleDriverRegistration() {
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>Driver Registration</Text>
-          <Text style={styles.headerSubtitle}>Section {currentSection} of 3</Text>
+          <Text style={styles.headerSubtitle}>Section {currentSection} of 4</Text>
         </View>
       </View>
 
@@ -576,6 +599,171 @@ export default function SimpleDriverRegistration() {
                 style={styles.halfButton}
               />
               <Button
+                title="Next: Agreement"
+                onPress={handleNext}
+                variant="secondary"
+                style={styles.halfButton}
+              />
+            </View>
+          </View>
+        )}
+
+        {currentSection === 4 && (
+          <View>
+            <Text style={styles.sectionTitle}>VK DROP TAXI - DRIVER AGREEMENT</Text>
+            
+            <View style={styles.agreementContainer}>
+              <ScrollView style={styles.agreementScroll} nestedScrollEnabled={true}>
+                <Text style={styles.agreementHeading}>1. Agreement</Text>
+                <Text style={styles.agreementText}>
+                  This Agreement is between VK Drop Taxi and the Driver.{'\n'}
+                  By registering, the Driver agrees to follow all platform rules and conditions.
+                </Text>
+
+                <Text style={styles.agreementHeading}>2. Registration & Wallet Rules</Text>
+                <Text style={styles.agreementText}>
+                  • Driver must pay a ₹500 attachment (registration) fee (non-refundable){'\n'}
+                  • Driver must maintain a minimum wallet balance of ₹1000{'\n'}
+                  • If wallet balance is below ₹1000, no new bookings will be assigned
+                </Text>
+
+                <Text style={styles.agreementHeading}>3. Driver Responsibilities</Text>
+                <Text style={styles.agreementText}>
+                  • Driver must provide correct personal and vehicle details{'\n'}
+                  • All documents must be valid{'\n'}
+                  • Driver must follow traffic and safety rules{'\n'}
+                  • Driver must behave professionally with customers
+                </Text>
+
+                <Text style={styles.agreementHeading}>4. Duty & Trips</Text>
+                <Text style={styles.agreementText}>
+                  • Driver will receive trips only when Duty ON{'\n'}
+                  • Once a trip is accepted, it must be completed
+                </Text>
+
+                <Text style={styles.agreementHeading}>5. Trip Cancellation & Penalty</Text>
+                <Text style={styles.agreementText}>
+                  • If a driver cancels a trip after accepting it:{'\n'}
+                  ₹500 penalty will be deducted from driver wallet
+                </Text>
+
+                <Text style={styles.agreementHeading}>6. Anti-Bypass Policy</Text>
+                <Text style={styles.agreementText}>
+                  • Driver must not take VK Drop Taxi customers outside the platform{'\n'}
+                  • If driver provides service privately (bypass):{'\n'}
+                  Account will be permanently blocked
+                </Text>
+
+                <Text style={styles.agreementHeading}>7. Account Control</Text>
+                <Text style={styles.agreementText}>
+                  VK Drop Taxi can suspend or block account for:{'\n'}
+                  • Wrong information{'\n'}
+                  • Misconduct{'\n'}
+                  • Repeated cancellations{'\n'}
+                  • Rule violations
+                </Text>
+
+                <Text style={styles.agreementHeading}>8. Acceptance</Text>
+                <Text style={styles.agreementText}>
+                  "I have read and accept all Terms and Conditions"
+                </Text>
+              </ScrollView>
+            </View>
+
+            {/* Checkbox */}
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => setAgreementAccepted(!agreementAccepted)}
+            >
+              <View style={[styles.checkbox, agreementAccepted && styles.checkboxChecked]}>
+                {agreementAccepted && (
+                  <Ionicons name="checkmark" size={18} color={Colors.white} />
+                )}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                I have read and accept all Terms and Conditions *
+              </Text>
+            </TouchableOpacity>
+
+            {/* Upload Signed Agreement */}
+            <View style={styles.imagePickerContainer}>
+              <Text style={styles.label}>Upload Signed Agreement (Photo/PDF) *</Text>
+              <View style={styles.imageActions}>
+                <TouchableOpacity
+                  style={styles.imageButton}
+                  onPress={async () => {
+                    if (Platform.OS === 'web') {
+                      const placeholder = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+                      setAgreementFile(placeholder);
+                      return;
+                    }
+                    try {
+                      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                      if (status !== 'granted') {
+                        Alert.alert('Permission needed', 'Camera permission is required');
+                        return;
+                      }
+                      const result = await ImagePicker.launchCameraAsync({
+                        allowsEditing: true,
+                        aspect: [4, 3],
+                        quality: 0.3,
+                        base64: true,
+                      });
+                      if (!result.canceled && result.assets[0].base64) {
+                        setAgreementFile(`data:image/jpeg;base64,${result.assets[0].base64}`);
+                      }
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to take photo');
+                    }
+                  }}
+                >
+                  <Ionicons name="camera" size={24} color={Colors.white} />
+                  <Text style={styles.imageButtonText}>Camera</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.imageButton, styles.galleryButton]}
+                  onPress={async () => {
+                    if (Platform.OS === 'web') {
+                      const placeholder = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+                      setAgreementFile(placeholder);
+                      return;
+                    }
+                    try {
+                      const result = await ImagePicker.launchImageLibraryAsync({
+                        mediaTypes: 'images',
+                        allowsEditing: true,
+                        aspect: [4, 3],
+                        quality: 0.3,
+                        base64: true,
+                      });
+                      if (!result.canceled && result.assets[0].base64) {
+                        setAgreementFile(`data:image/jpeg;base64,${result.assets[0].base64}`);
+                      }
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to pick image');
+                    }
+                  }}
+                >
+                  <Ionicons name="images" size={24} color={Colors.white} />
+                  <Text style={styles.imageButtonText}>Gallery</Text>
+                </TouchableOpacity>
+              </View>
+              {agreementFile && (
+                <View style={styles.imagePreview}>
+                  <Image source={{ uri: agreementFile }} style={styles.previewImage} />
+                  <Ionicons name="checkmark-circle" size={24} color={Colors.success} style={styles.checkmark} />
+                </View>
+              )}
+            </View>
+
+            <View style={styles.buttonGroup}>
+              <Button
+                title="Back"
+                onPress={() => setCurrentSection(3)}
+                variant="outline"
+                style={styles.halfButton}
+              />
+              <Button
                 title="Submit Registration"
                 onPress={handleSubmit}
                 loading={loading}
@@ -693,5 +881,53 @@ const styles = StyleSheet.create({
   },
   halfButton: {
     flex: 1,
+  },
+  agreementContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 16,
+    maxHeight: 300,
+  },
+  agreementScroll: {
+    padding: 16,
+  },
+  agreementHeading: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  agreementText: {
+    fontSize: 13,
+    color: Colors.textLight,
+    lineHeight: 20,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 8,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: Colors.secondary,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.secondary,
+  },
+  checkboxLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '500',
   },
 });

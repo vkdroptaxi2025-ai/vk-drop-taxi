@@ -110,6 +110,11 @@ class DocumentExpiry(BaseModel):
 class DriverVehiclePhoto(BaseModel):
     photo: str
 
+class DriverAgreement(BaseModel):
+    accepted: bool
+    agreement_file: Optional[str] = None
+    accepted_at: Optional[str] = None
+
 class ComprehensiveDriverRegister(BaseModel):
     phone: str
     personal_details: PersonalDetails
@@ -118,6 +123,7 @@ class ComprehensiveDriverRegister(BaseModel):
     documents: Documents
     document_expiry: DocumentExpiry
     driver_vehicle_photo: DriverVehiclePhoto
+    agreement: Optional[DriverAgreement] = None
 
 # Auth models
 class OTPRequest(BaseModel):
@@ -423,6 +429,12 @@ async def register_driver_kyc(driver_data: ComprehensiveDriverRegister):
         },
         
         "driver_vehicle_photo": driver_data.driver_vehicle_photo.photo,
+        
+        "agreement": {
+            "accepted": driver_data.agreement.accepted if driver_data.agreement else False,
+            "agreement_file": driver_data.agreement.agreement_file if driver_data.agreement else None,
+            "accepted_at": driver_data.agreement.accepted_at if driver_data.agreement else None
+        },
         
         "approval_status": DriverApprovalStatus.PENDING.value,
         "approval_remarks": None,
