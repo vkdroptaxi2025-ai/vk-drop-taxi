@@ -6,256 +6,139 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Platform,
   Image,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Input } from '../../components/Input';
-import { Button } from '../../components/Button';
 import { Colors } from '../../utils/colors';
+import { Button } from '../../components/Button';
+import { Input } from '../../components/Input';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
 
-// Conditional import for image picker
-let ImagePicker: any = null;
-if (Platform.OS !== 'web') {
-  ImagePicker = require('expo-image-picker');
-}
+const UPI_NUMBER = "9876543210@upi"; // Static UPI for payment
 
 export default function SimpleDriverRegistration() {
   const router = useRouter();
   const { phone } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
-  const [currentSection, setCurrentSection] = useState(1); // 1, 2, 3, or 4 (agreement)
+  const [currentStep, setCurrentStep] = useState(1); // 1, 2, or 3
 
-  // Agreement state
+  // Step 1: Basic Info
+  const [fullName, setFullName] = useState('');
+  const [drivingExperience, setDrivingExperience] = useState('');
+  const [vehicleType, setVehicleType] = useState<'sedan' | 'suv'>('sedan');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [vehicleModel, setVehicleModel] = useState('');
+
+  // Step 2: Documents
+  const [licenseFront, setLicenseFront] = useState('');
+  const [licenseBack, setLicenseBack] = useState('');
+  const [rcFront, setRcFront] = useState('');
+  const [rcBack, setRcBack] = useState('');
+  const [insurance, setInsurance] = useState('');
+  const [driverPhoto, setDriverPhoto] = useState('');
+
+  // Step 3: Payment & Agreement
+  const [paymentScreenshot, setPaymentScreenshot] = useState('');
   const [agreementAccepted, setAgreementAccepted] = useState(false);
-  const [agreementFile, setAgreementFile] = useState('');
+  const [signedAgreement, setSignedAgreement] = useState('');
 
-  // Form state
-  const [formData, setFormData] = useState({
-    // Personal Details
-    full_name: '',
-    mobile_number: phone as string,
-    full_address: '',
-    aadhaar_number: '',
-    pan_number: '',
-    driving_license_number: '',
-    driving_experience_years: '5',
-    driver_photo: '',
-
-    // Bank Details
-    account_holder_name: '',
-    bank_name: '',
-    account_number: '',
-    ifsc_code: '',
-    branch_name: '',
-
-    // Vehicle Details
-    vehicle_type: 'sedan',
-    vehicle_number: '',
-    vehicle_model: '',
-    vehicle_year: new Date().getFullYear().toString(),
-
-    // Documents (single image each)
-    aadhaar_doc: '',
-    pan_doc: '',
-    license_doc: '',
-    rc_doc: '',
-    insurance_doc: '',
-    fc_doc: '',
-    permit_doc: '',
-    pollution_doc: '',
-
-    // Expiry Dates
-    insurance_expiry: '',
-    fc_expiry: '',
-    permit_expiry: '',
-    pollution_expiry: '',
-    license_expiry: '',
-
-    // Driver + Vehicle Photo
-    driver_vehicle_photo: '',
-  });
-
-  const pickImage = async (field: string) => {
-    if (Platform.OS === 'web') {
-      Alert.alert('Not Available', 'Image upload works on mobile. Using placeholder for web.');
-      const placeholder = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-      setFormData({ ...formData, [field]: placeholder });
-      return;
-    }
-
+  // File picker function (gallery only, no camera)
+  const pickImage = async (setter: (value: string) => void) => {
     try {
+      // For web, use a simple placeholder
+      if (Platform.OS === 'web') {
+        const placeholder = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        setter(placeholder);
+        Alert.alert('Success', 'File selected (web mock)');
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.3,
+        quality: 0.5,
         base64: true,
       });
 
       if (!result.canceled && result.assets[0].base64) {
-        const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        setFormData({ ...formData, [field]: base64Image });
+        setter(`data:image/jpeg;base64,${result.assets[0].base64}`);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image');
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
 
-  const takePhoto = async (field: string) => {
-    if (Platform.OS === 'web') {
-      pickImage(field);
-      return;
-    }
-
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera permission is required');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.3,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets[0].base64) {
-        const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        setFormData({ ...formData, [field]: base64Image });
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to take photo');
-    }
-  };
-
-  const validateSection1 = () => {
-    if (!formData.full_name.trim()) {
-      Alert.alert('Validation Error', 'Please enter full name');
+  // Validation
+  const validateStep1 = () => {
+    if (!fullName.trim()) {
+      Alert.alert('Error', 'Please enter your full name');
       return false;
     }
-    if (!formData.full_address.trim()) {
-      Alert.alert('Validation Error', 'Please enter full address');
+    if (!drivingExperience || parseInt(drivingExperience) < 1) {
+      Alert.alert('Error', 'Please enter valid driving experience (min 1 year)');
       return false;
     }
-    if (formData.aadhaar_number.length !== 12) {
-      Alert.alert('Validation Error', 'Aadhaar must be 12 digits');
+    if (!vehicleNumber.trim() || vehicleNumber.length < 6) {
+      Alert.alert('Error', 'Please enter valid vehicle number');
       return false;
     }
-    if (formData.pan_number.length !== 10) {
-      Alert.alert('Validation Error', 'PAN must be 10 characters');
-      return false;
-    }
-    if (!formData.driving_license_number.trim()) {
-      Alert.alert('Validation Error', 'Please enter license number');
-      return false;
-    }
-    if (!formData.driver_photo) {
-      Alert.alert('Validation Error', 'Please upload driver photo');
-      return false;
-    }
-    if (!formData.account_holder_name.trim()) {
-      Alert.alert('Validation Error', 'Please enter account holder name');
-      return false;
-    }
-    if (!formData.bank_name.trim()) {
-      Alert.alert('Validation Error', 'Please enter bank name');
-      return false;
-    }
-    if (formData.account_number.length < 9) {
-      Alert.alert('Validation Error', 'Invalid account number');
-      return false;
-    }
-    if (formData.ifsc_code.length !== 11) {
-      Alert.alert('Validation Error', 'IFSC must be 11 characters');
-      return false;
-    }
-    if (!formData.vehicle_number.trim()) {
-      Alert.alert('Validation Error', 'Please enter vehicle number');
-      return false;
-    }
-    if (!formData.vehicle_model.trim()) {
-      Alert.alert('Validation Error', 'Please enter vehicle model');
+    if (!vehicleModel.trim()) {
+      Alert.alert('Error', 'Please enter vehicle model');
       return false;
     }
     return true;
   };
 
-  const validateSection2 = () => {
-    const docs = [
-      { field: 'aadhaar_doc', name: 'Aadhaar' },
-      { field: 'pan_doc', name: 'PAN Card' },
-      { field: 'license_doc', name: 'Driving License' },
-      { field: 'rc_doc', name: 'RC Book' },
-      { field: 'insurance_doc', name: 'Insurance' },
-      { field: 'fc_doc', name: 'Fitness Certificate' },
-      { field: 'permit_doc', name: 'Permit' },
-      { field: 'pollution_doc', name: 'Pollution Certificate' },
-    ];
-
-    for (const doc of docs) {
-      if (!formData[doc.field as keyof typeof formData]) {
-        Alert.alert('Validation Error', `Please upload ${doc.name}`);
-        return false;
-      }
+  const validateStep2 = () => {
+    if (!licenseFront || !licenseBack) {
+      Alert.alert('Error', 'Please upload both sides of Driving License');
+      return false;
     }
-
-    // Validate expiry dates
-    const dates = [
-      { field: 'insurance_expiry', name: 'Insurance' },
-      { field: 'fc_expiry', name: 'FC' },
-      { field: 'permit_expiry', name: 'Permit' },
-      { field: 'pollution_expiry', name: 'Pollution' },
-      { field: 'license_expiry', name: 'License' },
-    ];
-
-    for (const date of dates) {
-      if (!formData[date.field as keyof typeof formData]) {
-        Alert.alert('Validation Error', `Please enter ${date.name} expiry date`);
-        return false;
-      }
+    if (!rcFront || !rcBack) {
+      Alert.alert('Error', 'Please upload both sides of RC Book');
+      return false;
     }
-
-    return true;
-  };
-
-  const validateSection3 = () => {
-    if (!formData.driver_vehicle_photo) {
-      Alert.alert('Validation Error', 'Driver + Vehicle photo is mandatory');
+    if (!insurance) {
+      Alert.alert('Error', 'Please upload Insurance document');
+      return false;
+    }
+    if (!driverPhoto) {
+      Alert.alert('Error', 'Please upload your photo');
       return false;
     }
     return true;
   };
 
-  const validateAgreement = () => {
+  const validateStep3 = () => {
+    if (!paymentScreenshot) {
+      Alert.alert('Error', 'Please upload payment screenshot');
+      return false;
+    }
     if (!agreementAccepted) {
-      Alert.alert('Validation Error', 'You must accept the terms and conditions');
+      Alert.alert('Error', 'Please accept the terms and conditions');
       return false;
     }
-    if (!agreementFile) {
-      Alert.alert('Validation Error', 'Please upload signed agreement document');
+    if (!signedAgreement) {
+      Alert.alert('Error', 'Please upload signed agreement');
       return false;
     }
     return true;
   };
 
   const handleNext = () => {
-    if (currentSection === 1 && validateSection1()) {
-      setCurrentSection(2);
-    } else if (currentSection === 2 && validateSection2()) {
-      setCurrentSection(3);
-    } else if (currentSection === 3 && validateSection3()) {
-      setCurrentSection(4);
+    if (currentStep === 1 && validateStep1()) {
+      setCurrentStep(2);
+    } else if (currentStep === 2 && validateStep2()) {
+      setCurrentStep(3);
     }
   };
 
   const handleSubmit = async () => {
-    if (!validateAgreement()) return;
+    if (!validateStep3()) return;
 
     setLoading(true);
     try {
@@ -263,564 +146,409 @@ export default function SimpleDriverRegistration() {
 
       const payload = {
         phone: phone as string,
-        personal_details: {
-          full_name: formData.full_name,
-          mobile_number: formData.mobile_number,
-          full_address: formData.full_address,
-          aadhaar_number: formData.aadhaar_number,
-          pan_number: formData.pan_number.toUpperCase(),
-          driving_license_number: formData.driving_license_number,
-          driving_experience_years: parseInt(formData.driving_experience_years),
-          driver_photo: formData.driver_photo,
-        },
-        bank_details: {
-          account_holder_name: formData.account_holder_name,
-          bank_name: formData.bank_name,
-          account_number: formData.account_number,
-          ifsc_code: formData.ifsc_code.toUpperCase(),
-          branch_name: formData.branch_name,
-        },
-        vehicle_details: {
-          vehicle_type: formData.vehicle_type,
-          vehicle_number: formData.vehicle_number.toUpperCase(),
-          vehicle_model: formData.vehicle_model,
-          vehicle_year: parseInt(formData.vehicle_year),
-        },
+        full_name: fullName,
+        driving_experience: parseInt(drivingExperience),
+        vehicle_type: vehicleType,
+        vehicle_number: vehicleNumber.toUpperCase(),
+        vehicle_model: vehicleModel,
         documents: {
-          aadhaar_card: { front_image: formData.aadhaar_doc, back_image: null },
-          pan_card: { front_image: formData.pan_doc, back_image: null },
-          driving_license: { front_image: formData.license_doc, back_image: null },
-          rc_book: { front_image: formData.rc_doc, back_image: null },
-          insurance: { front_image: formData.insurance_doc, back_image: null },
-          fitness_certificate: { front_image: formData.fc_doc, back_image: null },
-          permit: { front_image: formData.permit_doc, back_image: null },
-          pollution_certificate: { front_image: formData.pollution_doc, back_image: null },
+          license_front: licenseFront,
+          license_back: licenseBack,
+          rc_front: rcFront,
+          rc_back: rcBack,
+          insurance: insurance,
+          driver_photo: driverPhoto,
         },
-        document_expiry: {
-          insurance_expiry: formData.insurance_expiry,
-          fc_expiry: formData.fc_expiry,
-          permit_expiry: formData.permit_expiry,
-          pollution_expiry: formData.pollution_expiry,
-          license_expiry: formData.license_expiry,
-        },
-        driver_vehicle_photo: {
-          photo: formData.driver_vehicle_photo,
+        payment: {
+          amount: 500,
+          screenshot: paymentScreenshot,
         },
         agreement: {
           accepted: agreementAccepted,
-          agreement_file: agreementFile,
+          signed_document: signedAgreement,
           accepted_at: new Date().toISOString(),
         },
       };
 
-      const response = await axios.post(`${API_URL}/api/driver/register-kyc`, payload);
+      const response = await fetch(`${API_URL}/api/driver/register-simple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-      if (response.data.success) {
+      const data = await response.json();
+
+      if (response.ok && data.success) {
         Alert.alert(
           'Registration Successful!',
-          'Your application has been submitted. Admin will review and approve soon.',
-          [{ text: 'OK', onPress: () => router.replace('/') }]
+          'Your application has been submitted. You will be notified once approved.',
+          [{ text: 'OK', onPress: () => router.replace('/auth/login?role=driver') }]
         );
+      } else {
+        Alert.alert('Error', data.detail || 'Registration failed');
       }
-    } catch (error: any) {
-      Alert.alert(
-        'Registration Failed',
-        error.response?.data?.detail || 'Please check all fields and try again.'
-      );
-      console.error('Registration error:', error.response?.data);
+    } catch (error) {
+      Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const renderImagePicker = (field: string, label: string) => (
-    <View style={styles.imagePickerContainer}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.imageActions}>
-        <TouchableOpacity
-          style={styles.imageButton}
-          onPress={() => takePhoto(field)}
-        >
-          <Ionicons name="camera" size={24} color={Colors.white} />
-          <Text style={styles.imageButtonText}>Camera</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.imageButton, styles.galleryButton]}
-          onPress={() => pickImage(field)}
-        >
-          <Ionicons name="images" size={24} color={Colors.white} />
-          <Text style={styles.imageButtonText}>Gallery</Text>
-        </TouchableOpacity>
+  // Upload Button Component
+  const UploadButton = ({ 
+    label, 
+    value, 
+    onPress 
+  }: { 
+    label: string; 
+    value: string; 
+    onPress: () => void;
+  }) => (
+    <TouchableOpacity style={styles.uploadBtn} onPress={onPress}>
+      <View style={styles.uploadContent}>
+        {value ? (
+          <>
+            <Image source={{ uri: value }} style={styles.uploadPreview} />
+            <Ionicons name="checkmark-circle" size={24} color={Colors.success} style={styles.uploadCheck} />
+          </>
+        ) : (
+          <>
+            <Ionicons name="cloud-upload" size={32} color={Colors.secondary} />
+            <Text style={styles.uploadLabel}>{label}</Text>
+            <Text style={styles.uploadHint}>Tap to upload</Text>
+          </>
+        )}
       </View>
-      {formData[field as keyof typeof formData] && (
-        <View style={styles.imagePreview}>
-          <Image
-            source={{ uri: formData[field as keyof typeof formData] as string }}
-            style={styles.previewImage}
-          />
-          <Ionicons name="checkmark-circle" size={24} color={Colors.success} style={styles.checkmark} />
-        </View>
-      )}
-    </View>
+    </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => currentStep > 1 ? setCurrentStep(currentStep - 1) : router.back()}>
           <Ionicons name="arrow-back" size={24} color={Colors.white} />
         </TouchableOpacity>
-        <View>
+        <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Driver Registration</Text>
-          <Text style={styles.headerSubtitle}>Section {currentSection} of 4</Text>
+          <Text style={styles.headerSubtitle}>Step {currentStep} of 3</Text>
         </View>
+        <View style={{ width: 24 }} />
+      </View>
+
+      {/* Progress Bar */}
+      <View style={styles.progressContainer}>
+        {[1, 2, 3].map((step) => (
+          <View
+            key={step}
+            style={[
+              styles.progressStep,
+              step <= currentStep && styles.progressStepActive,
+            ]}
+          />
+        ))}
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {currentSection === 1 && (
+        {/* STEP 1: Basic Info + Vehicle */}
+        {currentStep === 1 && (
           <View>
-            <Text style={styles.sectionTitle}>Personal & Bank & Vehicle Details</Text>
-            
+            <Text style={styles.stepTitle}>Basic Information</Text>
+
             <Input
               label="Full Name *"
+              value={fullName}
+              onChangeText={setFullName}
               placeholder="Enter your full name"
-              value={formData.full_name}
-              onChangeText={(text) => setFormData({ ...formData, full_name: text })}
             />
 
             <Input
-              label="Full Address *"
-              placeholder="Complete address"
-              value={formData.full_address}
-              onChangeText={(text) => setFormData({ ...formData, full_address: text })}
-              multiline
-            />
-
-            <Input
-              label="Aadhaar Number *"
-              placeholder="12 digit Aadhaar"
-              value={formData.aadhaar_number}
-              onChangeText={(text) => setFormData({ ...formData, aadhaar_number: text.replace(/\D/g, '') })}
-              keyboardType="number-pad"
-              maxLength={12}
-            />
-
-            <Input
-              label="PAN Number *"
-              placeholder="10 character PAN"
-              value={formData.pan_number}
-              onChangeText={(text) => setFormData({ ...formData, pan_number: text.toUpperCase() })}
-              maxLength={10}
-              autoCapitalize="characters"
-            />
-
-            <Input
-              label="Driving License Number *"
-              placeholder="License number"
-              value={formData.driving_license_number}
-              onChangeText={(text) => setFormData({ ...formData, driving_license_number: text })}
+              label="Mobile Number"
+              value={phone as string}
+              editable={false}
+              placeholder="Mobile number"
             />
 
             <Input
               label="Driving Experience (Years) *"
-              placeholder="Years"
-              value={formData.driving_experience_years}
-              onChangeText={(text) => setFormData({ ...formData, driving_experience_years: text.replace(/\D/g, '') })}
-              keyboardType="number-pad"
+              value={drivingExperience}
+              onChangeText={setDrivingExperience}
+              placeholder="e.g. 5"
+              keyboardType="numeric"
             />
 
-            {renderImagePicker('driver_photo', 'Driver Photo *')}
+            <Text style={styles.sectionTitle}>Vehicle Details</Text>
 
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Bank Details</Text>
-
-            <Input
-              label="Account Holder Name *"
-              placeholder="As per bank"
-              value={formData.account_holder_name}
-              onChangeText={(text) => setFormData({ ...formData, account_holder_name: text })}
-            />
-
-            <Input
-              label="Bank Name *"
-              placeholder="Bank name"
-              value={formData.bank_name}
-              onChangeText={(text) => setFormData({ ...formData, bank_name: text })}
-            />
-
-            <Input
-              label="Account Number *"
-              placeholder="Account number"
-              value={formData.account_number}
-              onChangeText={(text) => setFormData({ ...formData, account_number: text.replace(/\D/g, '') })}
-              keyboardType="number-pad"
-            />
-
-            <Input
-              label="IFSC Code *"
-              placeholder="11 character IFSC"
-              value={formData.ifsc_code}
-              onChangeText={(text) => setFormData({ ...formData, ifsc_code: text.toUpperCase() })}
-              maxLength={11}
-              autoCapitalize="characters"
-            />
-
-            <Input
-              label="Branch Name"
-              placeholder="Branch name"
-              value={formData.branch_name}
-              onChangeText={(text) => setFormData({ ...formData, branch_name: text })}
-            />
-
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Vehicle Details</Text>
-
-            <View style={styles.pickerContainer}>
-              <Text style={styles.label}>Vehicle Type *</Text>
-              <View style={styles.pickerWrapper}>
-                <Picker
-                  selectedValue={formData.vehicle_type}
-                  onValueChange={(value) => setFormData({ ...formData, vehicle_type: value })}
-                >
-                  <Picker.Item label="Sedan (₹14/km)" value="sedan" />
-                  <Picker.Item label="SUV (₹18/km)" value="suv" />
-                </Picker>
-              </View>
+            <Text style={styles.label}>Vehicle Type *</Text>
+            <View style={styles.vehicleTypeRow}>
+              <TouchableOpacity
+                style={[styles.vehicleTypeBtn, vehicleType === 'sedan' && styles.vehicleTypeBtnActive]}
+                onPress={() => setVehicleType('sedan')}
+              >
+                <Ionicons 
+                  name="car-sport" 
+                  size={28} 
+                  color={vehicleType === 'sedan' ? Colors.white : Colors.text} 
+                />
+                <Text style={[styles.vehicleTypeText, vehicleType === 'sedan' && styles.vehicleTypeTextActive]}>
+                  Sedan
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.vehicleTypeBtn, vehicleType === 'suv' && styles.vehicleTypeBtnActive]}
+                onPress={() => setVehicleType('suv')}
+              >
+                <Ionicons 
+                  name="car" 
+                  size={28} 
+                  color={vehicleType === 'suv' ? Colors.white : Colors.text} 
+                />
+                <Text style={[styles.vehicleTypeText, vehicleType === 'suv' && styles.vehicleTypeTextActive]}>
+                  SUV
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <Input
               label="Vehicle Number *"
-              placeholder="e.g., MH12AB1234"
-              value={formData.vehicle_number}
-              onChangeText={(text) => setFormData({ ...formData, vehicle_number: text.toUpperCase() })}
+              value={vehicleNumber}
+              onChangeText={setVehicleNumber}
+              placeholder="e.g. TN01AB1234"
               autoCapitalize="characters"
             />
 
             <Input
               label="Vehicle Model *"
-              placeholder="e.g., Swift Dzire"
-              value={formData.vehicle_model}
-              onChangeText={(text) => setFormData({ ...formData, vehicle_model: text })}
+              value={vehicleModel}
+              onChangeText={setVehicleModel}
+              placeholder="e.g. Swift Dzire"
             />
 
-            <Input
-              label="Vehicle Year *"
-              placeholder="Year"
-              value={formData.vehicle_year}
-              onChangeText={(text) => setFormData({ ...formData, vehicle_year: text.replace(/\D/g, '') })}
-              keyboardType="number-pad"
-              maxLength={4}
+            <Button
+              title="Next: Upload Documents"
+              onPress={handleNext}
+              variant="secondary"
+              style={styles.nextBtn}
             />
-
-            <Button title="Next: Documents" onPress={handleNext} variant="secondary" />
           </View>
         )}
 
-        {currentSection === 2 && (
+        {/* STEP 2: Document Uploads */}
+        {currentStep === 2 && (
           <View>
-            <Text style={styles.sectionTitle}>Documents & Expiry Dates</Text>
-            
-            {renderImagePicker('aadhaar_doc', 'Aadhaar Card *')}
-            {renderImagePicker('pan_doc', 'PAN Card *')}
-            {renderImagePicker('license_doc', 'Driving License *')}
-            {renderImagePicker('rc_doc', 'RC Book *')}
-            {renderImagePicker('insurance_doc', 'Insurance *')}
-            {renderImagePicker('fc_doc', 'Fitness Certificate *')}
-            {renderImagePicker('permit_doc', 'Permit *')}
-            {renderImagePicker('pollution_doc', 'Pollution Certificate *')}
+            <Text style={styles.stepTitle}>Upload Documents</Text>
+            <Text style={styles.stepHint}>Tap each box to upload from gallery</Text>
 
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Expiry Dates (YYYY-MM-DD)</Text>
+            <Text style={styles.docLabel}>Driving License</Text>
+            <View style={styles.uploadRow}>
+              <UploadButton
+                label="Front Side"
+                value={licenseFront}
+                onPress={() => pickImage(setLicenseFront)}
+              />
+              <UploadButton
+                label="Back Side"
+                value={licenseBack}
+                onPress={() => pickImage(setLicenseBack)}
+              />
+            </View>
 
-            <Input
-              label="Insurance Expiry *"
-              placeholder="YYYY-MM-DD"
-              value={formData.insurance_expiry}
-              onChangeText={(text) => setFormData({ ...formData, insurance_expiry: text })}
-            />
+            <Text style={styles.docLabel}>RC Book</Text>
+            <View style={styles.uploadRow}>
+              <UploadButton
+                label="Front Side"
+                value={rcFront}
+                onPress={() => pickImage(setRcFront)}
+              />
+              <UploadButton
+                label="Back Side"
+                value={rcBack}
+                onPress={() => pickImage(setRcBack)}
+              />
+            </View>
 
-            <Input
-              label="FC Expiry *"
-              placeholder="YYYY-MM-DD"
-              value={formData.fc_expiry}
-              onChangeText={(text) => setFormData({ ...formData, fc_expiry: text })}
-            />
+            <Text style={styles.docLabel}>Insurance</Text>
+            <View style={styles.uploadRow}>
+              <UploadButton
+                label="Insurance Document"
+                value={insurance}
+                onPress={() => pickImage(setInsurance)}
+              />
+            </View>
 
-            <Input
-              label="Permit Expiry *"
-              placeholder="YYYY-MM-DD"
-              value={formData.permit_expiry}
-              onChangeText={(text) => setFormData({ ...formData, permit_expiry: text })}
-            />
+            <Text style={styles.docLabel}>Your Photo</Text>
+            <View style={styles.uploadRow}>
+              <UploadButton
+                label="Upload Photo"
+                value={driverPhoto}
+                onPress={() => pickImage(setDriverPhoto)}
+              />
+            </View>
 
-            <Input
-              label="Pollution Expiry *"
-              placeholder="YYYY-MM-DD"
-              value={formData.pollution_expiry}
-              onChangeText={(text) => setFormData({ ...formData, pollution_expiry: text })}
-            />
-
-            <Input
-              label="License Expiry *"
-              placeholder="YYYY-MM-DD"
-              value={formData.license_expiry}
-              onChangeText={(text) => setFormData({ ...formData, license_expiry: text })}
-            />
-
-            <View style={styles.buttonGroup}>
+            <View style={styles.buttonRow}>
               <Button
                 title="Back"
-                onPress={() => setCurrentSection(1)}
+                onPress={() => setCurrentStep(1)}
                 variant="outline"
-                style={styles.halfButton}
+                style={styles.halfBtn}
               />
               <Button
-                title="Next: Final Photo"
+                title="Next: Payment"
                 onPress={handleNext}
                 variant="secondary"
-                style={styles.halfButton}
+                style={styles.halfBtn}
               />
             </View>
           </View>
         )}
 
-        {currentSection === 3 && (
+        {/* STEP 3: Payment & Agreement */}
+        {currentStep === 3 && (
           <View>
-            <Text style={styles.sectionTitle}>Driver + Vehicle Verification Photo</Text>
-            <Text style={styles.instructionText}>
-              Take a photo of yourself standing near your vehicle with the number plate clearly visible.
-              This is mandatory for verification.
-            </Text>
+            <Text style={styles.stepTitle}>Payment & Agreement</Text>
 
-            {renderImagePicker('driver_vehicle_photo', 'Driver + Vehicle Photo *')}
+            {/* Payment Section */}
+            <View style={styles.paymentCard}>
+              <Text style={styles.paymentTitle}>Registration Fee</Text>
+              <Text style={styles.paymentAmount}>₹500</Text>
+              <Text style={styles.paymentHint}>(Non-refundable)</Text>
+              
+              <View style={styles.upiBox}>
+                <Text style={styles.upiLabel}>Pay to UPI:</Text>
+                <Text style={styles.upiNumber}>{UPI_NUMBER}</Text>
+              </View>
 
-            <View style={styles.buttonGroup}>
-              <Button
-                title="Back"
-                onPress={() => setCurrentSection(2)}
-                variant="outline"
-                style={styles.halfButton}
-              />
-              <Button
-                title="Next: Agreement"
-                onPress={handleNext}
-                variant="secondary"
-                style={styles.halfButton}
+              <Text style={styles.uploadInstruction}>Upload Payment Screenshot</Text>
+              <UploadButton
+                label="Payment Screenshot"
+                value={paymentScreenshot}
+                onPress={() => pickImage(setPaymentScreenshot)}
               />
             </View>
-          </View>
-        )}
 
-        {currentSection === 4 && (
-          <View>
-            <Text style={styles.sectionTitle}>VK DROP TAXI - DRIVER AGREEMENT</Text>
-            
-            <View style={styles.agreementContainer}>
-              <ScrollView style={styles.agreementScroll} nestedScrollEnabled={true}>
-                <Text style={styles.agreementHeading}>1. Agreement</Text>
-                <Text style={styles.agreementText}>
-                  This Agreement is between VK Drop Taxi and the Driver.{'\n'}
-                  By registering, the Driver agrees to follow all platform rules and conditions.
-                </Text>
-
-                <Text style={styles.agreementHeading}>2. Registration & Wallet Rules</Text>
-                <Text style={styles.agreementText}>
-                  • Driver must pay a ₹500 attachment (registration) fee (non-refundable){'\n'}
-                  • Driver must maintain a minimum wallet balance of ₹1000{'\n'}
-                  • If wallet balance is below ₹1000, no new bookings will be assigned
-                </Text>
-
-                <Text style={styles.agreementHeading}>3. Driver Responsibilities</Text>
-                <Text style={styles.agreementText}>
-                  • Driver must provide correct personal and vehicle details{'\n'}
-                  • All documents must be valid{'\n'}
-                  • Driver must follow traffic and safety rules{'\n'}
-                  • Driver must behave professionally with customers
-                </Text>
-
-                <Text style={styles.agreementHeading}>4. Duty & Trips</Text>
-                <Text style={styles.agreementText}>
-                  • Driver will receive trips only when Duty ON{'\n'}
-                  • Once a trip is accepted, it must be completed
-                </Text>
-
-                <Text style={styles.agreementHeading}>5. Trip Cancellation & Penalty</Text>
-                <Text style={styles.agreementText}>
-                  • If a driver cancels a trip after accepting it:{'\n'}
-                  ₹500 penalty will be deducted from driver wallet
-                </Text>
-
-                <Text style={styles.agreementHeading}>6. Anti-Bypass Policy</Text>
-                <Text style={styles.agreementText}>
-                  • Driver must not take VK Drop Taxi customers outside the platform{'\n'}
-                  • If driver provides service privately (bypass):{'\n'}
-                  Account will be permanently blocked
-                </Text>
-
-                <Text style={styles.agreementHeading}>7. Account Control</Text>
-                <Text style={styles.agreementText}>
-                  VK Drop Taxi can suspend or block account for:{'\n'}
-                  • Wrong information{'\n'}
-                  • Misconduct{'\n'}
-                  • Repeated cancellations{'\n'}
-                  • Rule violations
-                </Text>
-
-                <Text style={styles.agreementHeading}>8. Acceptance</Text>
-                <Text style={styles.agreementText}>
-                  "I have read and accept all Terms and Conditions"
-                </Text>
-              </ScrollView>
-            </View>
-
-            {/* Checkbox */}
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => setAgreementAccepted(!agreementAccepted)}
-            >
-              <View style={[styles.checkbox, agreementAccepted && styles.checkboxChecked]}>
-                {agreementAccepted && (
-                  <Ionicons name="checkmark" size={18} color={Colors.white} />
-                )}
+            {/* Agreement Section */}
+            <View style={styles.agreementCard}>
+              <Text style={styles.agreementTitle}>Driver Agreement</Text>
+              
+              <View style={styles.agreementTerms}>
+                <Text style={styles.termText}>• Minimum wallet balance: ₹1000</Text>
+                <Text style={styles.termText}>• Trip cancellation penalty: ₹500</Text>
+                <Text style={styles.termText}>• Must follow all platform rules</Text>
+                <Text style={styles.termText}>• Account may be blocked for violations</Text>
               </View>
-              <Text style={styles.checkboxLabel}>
-                I have read and accept all Terms and Conditions *
-              </Text>
-            </TouchableOpacity>
 
-            {/* Upload Signed Agreement */}
-            <View style={styles.imagePickerContainer}>
-              <Text style={styles.label}>Upload Signed Agreement (Photo/PDF) *</Text>
-              <View style={styles.imageActions}>
-                <TouchableOpacity
-                  style={styles.imageButton}
-                  onPress={async () => {
-                    if (Platform.OS === 'web') {
-                      const placeholder = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-                      setAgreementFile(placeholder);
-                      return;
-                    }
-                    try {
-                      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-                      if (status !== 'granted') {
-                        Alert.alert('Permission needed', 'Camera permission is required');
-                        return;
-                      }
-                      const result = await ImagePicker.launchCameraAsync({
-                        allowsEditing: true,
-                        aspect: [4, 3],
-                        quality: 0.3,
-                        base64: true,
-                      });
-                      if (!result.canceled && result.assets[0].base64) {
-                        setAgreementFile(`data:image/jpeg;base64,${result.assets[0].base64}`);
-                      }
-                    } catch (error) {
-                      Alert.alert('Error', 'Failed to take photo');
-                    }
-                  }}
-                >
-                  <Ionicons name="camera" size={24} color={Colors.white} />
-                  <Text style={styles.imageButtonText}>Camera</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.imageButton, styles.galleryButton]}
-                  onPress={async () => {
-                    if (Platform.OS === 'web') {
-                      const placeholder = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-                      setAgreementFile(placeholder);
-                      return;
-                    }
-                    try {
-                      const result = await ImagePicker.launchImageLibraryAsync({
-                        mediaTypes: 'images',
-                        allowsEditing: true,
-                        aspect: [4, 3],
-                        quality: 0.3,
-                        base64: true,
-                      });
-                      if (!result.canceled && result.assets[0].base64) {
-                        setAgreementFile(`data:image/jpeg;base64,${result.assets[0].base64}`);
-                      }
-                    } catch (error) {
-                      Alert.alert('Error', 'Failed to pick image');
-                    }
-                  }}
-                >
-                  <Ionicons name="images" size={24} color={Colors.white} />
-                  <Text style={styles.imageButtonText}>Gallery</Text>
-                </TouchableOpacity>
-              </View>
-              {agreementFile && (
-                <View style={styles.imagePreview}>
-                  <Image source={{ uri: agreementFile }} style={styles.previewImage} />
-                  <Ionicons name="checkmark-circle" size={24} color={Colors.success} style={styles.checkmark} />
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setAgreementAccepted(!agreementAccepted)}
+              >
+                <View style={[styles.checkbox, agreementAccepted && styles.checkboxChecked]}>
+                  {agreementAccepted && <Ionicons name="checkmark" size={18} color={Colors.white} />}
                 </View>
-              )}
+                <Text style={styles.checkboxLabel}>
+                  I accept all Terms and Conditions *
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.uploadInstruction}>Upload Signed Agreement</Text>
+              <UploadButton
+                label="Signed Agreement"
+                value={signedAgreement}
+                onPress={() => pickImage(setSignedAgreement)}
+              />
             </View>
 
-            <View style={styles.buttonGroup}>
+            <View style={styles.buttonRow}>
               <Button
                 title="Back"
-                onPress={() => setCurrentSection(3)}
+                onPress={() => setCurrentStep(2)}
                 variant="outline"
-                style={styles.halfButton}
+                style={styles.halfBtn}
               />
               <Button
-                title="Submit Registration"
+                title="Submit"
                 onPress={handleSubmit}
                 loading={loading}
                 variant="secondary"
-                style={styles.halfButton}
+                style={styles.halfBtn}
               />
             </View>
           </View>
         )}
+
+        <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#f5f5f5',
   },
   header: {
-    backgroundColor: Colors.secondary,
-    padding: 16,
-    paddingTop: 60,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.secondary,
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
   },
-  backButton: {
-    marginRight: 16,
+  headerCenter: {
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: Colors.white,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.white,
     opacity: 0.9,
+    marginTop: 2,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+    gap: 8,
+  },
+  progressStep: {
+    flex: 1,
+    height: 4,
+    backgroundColor: Colors.lightGray,
+    borderRadius: 2,
+  },
+  progressStepActive: {
+    backgroundColor: Colors.secondary,
   },
   content: {
     flex: 1,
     padding: 16,
   },
-  sectionTitle: {
-    fontSize: 18,
+  stepTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: Colors.text,
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  instructionText: {
-    fontSize: 14,
+  stepHint: {
+    fontSize: 13,
     color: Colors.textLight,
-    marginBottom: 16,
-    lineHeight: 20,
+    marginBottom: 20,
   },
-  imagePickerContainer: {
-    marginBottom: 16,
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 24,
+    marginBottom: 12,
   },
   label: {
     fontSize: 14,
@@ -828,88 +556,168 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: 8,
   },
-  imageActions: {
+  vehicleTypeRow: {
     flexDirection: 'row',
     gap: 12,
-  },
-  imageButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.secondary,
-    padding: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  galleryButton: {
-    backgroundColor: Colors.primary,
-  },
-  imageButtonText: {
-    color: Colors.white,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  imagePreview: {
-    marginTop: 12,
-    position: 'relative',
-  },
-  previewImage: {
-    width: '100%',
-    height: 150,
-    borderRadius: 12,
-    backgroundColor: Colors.lightGray,
-  },
-  checkmark: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  pickerContainer: {
     marginBottom: 16,
   },
-  pickerWrapper: {
-    borderWidth: 1,
-    borderColor: Colors.border,
+  vehicleTypeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 16,
     borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.border,
     backgroundColor: Colors.white,
   },
-  buttonGroup: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
+  vehicleTypeBtnActive: {
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
   },
-  halfButton: {
-    flex: 1,
-  },
-  agreementContainer: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 16,
-    maxHeight: 300,
-  },
-  agreementScroll: {
-    padding: 16,
-  },
-  agreementHeading: {
-    fontSize: 15,
+  vehicleTypeText: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: Colors.text,
-    marginTop: 12,
-    marginBottom: 6,
+    marginTop: 8,
   },
-  agreementText: {
+  vehicleTypeTextActive: {
+    color: Colors.white,
+  },
+  nextBtn: {
+    marginTop: 24,
+  },
+  docLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  uploadRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  uploadBtn: {
+    flex: 1,
+    minHeight: 100,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    overflow: 'hidden',
+  },
+  uploadContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+  },
+  uploadPreview: {
+    width: '100%',
+    height: 80,
+    borderRadius: 8,
+  },
+  uploadCheck: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+  },
+  uploadLabel: {
     fontSize: 13,
-    color: Colors.textLight,
-    lineHeight: 20,
+    fontWeight: '600',
+    color: Colors.text,
+    marginTop: 8,
+    textAlign: 'center',
   },
-  checkboxContainer: {
+  uploadHint: {
+    fontSize: 11,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  halfBtn: {
+    flex: 1,
+  },
+  paymentCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  paymentTitle: {
+    fontSize: 14,
+    color: Colors.textLight,
+  },
+  paymentAmount: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: Colors.secondary,
+    marginVertical: 4,
+  },
+  paymentHint: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginBottom: 16,
+  },
+  upiBox: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  upiLabel: {
+    fontSize: 12,
+    color: Colors.textLight,
+  },
+  upiNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 4,
+  },
+  uploadInstruction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text,
+    marginTop: 12,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  agreementCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  agreementTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  agreementTerms: {
+    backgroundColor: '#fff8e1',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  termText: {
+    fontSize: 13,
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
-    paddingVertical: 8,
   },
   checkbox: {
     width: 24,
@@ -928,6 +736,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: Colors.text,
-    fontWeight: '500',
   },
 });

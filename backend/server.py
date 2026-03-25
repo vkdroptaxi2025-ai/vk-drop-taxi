@@ -140,6 +140,35 @@ class CustomerRegister(BaseModel):
     name: str
     location: Optional[Location] = None
 
+# Simplified driver registration
+class SimpleDriverDocuments(BaseModel):
+    license_front: str
+    license_back: str
+    rc_front: str
+    rc_back: str
+    insurance: str
+    driver_photo: str
+
+class SimpleDriverPayment(BaseModel):
+    amount: int
+    screenshot: str
+
+class SimpleDriverAgreement(BaseModel):
+    accepted: bool
+    signed_document: str
+    accepted_at: str
+
+class SimpleDriverRegister(BaseModel):
+    phone: str
+    full_name: str
+    driving_experience: int
+    vehicle_type: VehicleType
+    vehicle_number: str
+    vehicle_model: str
+    documents: SimpleDriverDocuments
+    payment: SimpleDriverPayment
+    agreement: SimpleDriverAgreement
+
 # Legacy driver register
 class DriverRegister(BaseModel):
     phone: str
@@ -465,6 +494,105 @@ async def register_driver_kyc(driver_data: ComprehensiveDriverRegister):
         "success": True,
         "driver_id": driver_id,
         "message": "Registration submitted successfully. Awaiting admin approval.",
+        "approval_status": DriverApprovalStatus.PENDING.value
+    }
+
+@api_router.post("/driver/register-simple")
+async def register_driver_simple(driver_data: SimpleDriverRegister):
+    """
+    Simplified driver registration - 3 steps only
+    No bank details, no PAN/Aadhaar, minimal fields
+    """
+    # Check existing
+    existing = await db.drivers.find_one({"phone": driver_data.phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Driver already registered with this phone")
+    
+    # Basic validation
+    if len(driver_data.full_name.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Full name must be at least 3 characters")
+    
+    if driver_data.driving_experience < 1:
+        raise HTTPException(status_code=400, detail="Minimum 1 year driving experience required")
+    
+    if len(driver_data.vehicle_number) < 6:
+        raise HTTPException(status_code=400, detail="Invalid vehicle number")
+    
+    if not driver_data.agreement.accepted:
+        raise HTTPException(status_code=400, detail="Agreement must be accepted")
+    
+    driver_id = str(uuid.uuid4())
+    
+    driver_document = {
+        "driver_id": driver_id,
+        "phone": driver_data.phone,
+        "role": UserRole.DRIVER.value,
+        "name": driver_data.full_name,
+        
+        "personal_details": {
+            "full_name": driver_data.full_name,
+            "mobile_number": driver_data.phone,
+            "driving_experience_years": driver_data.driving_experience,
+        },
+        
+        "vehicle_details": {
+            "vehicle_type": driver_data.vehicle_type.value,
+            "vehicle_number": driver_data.vehicle_number.upper(),
+            "vehicle_model": driver_data.vehicle_model,
+        },
+        
+        "documents": {
+            "license_front": driver_data.documents.license_front,
+            "license_back": driver_data.documents.license_back,
+            "rc_front": driver_data.documents.rc_front,
+            "rc_back": driver_data.documents.rc_back,
+            "insurance": driver_data.documents.insurance,
+            "driver_photo": driver_data.documents.driver_photo,
+        },
+        
+        "payment": {
+            "registration_fee": driver_data.payment.amount,
+            "payment_screenshot": driver_data.payment.screenshot,
+            "paid_at": datetime.utcnow().isoformat(),
+        },
+        
+        "agreement": {
+            "accepted": driver_data.agreement.accepted,
+            "signed_document": driver_data.agreement.signed_document,
+            "accepted_at": driver_data.agreement.accepted_at,
+        },
+        
+        "approval_status": DriverApprovalStatus.PENDING.value,
+        "approval_remarks": None,
+        
+        "driver_status": DriverStatus.OFFLINE.value,
+        "is_online": False,
+        "duty_on": False,
+        
+        "earnings": 0.0,
+        "total_trips": 0,
+        "completed_trips": 0,
+        "continuous_trips_count": 0,
+        
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    await db.drivers.insert_one(driver_document)
+    
+    # Create wallet
+    wallet_data = {
+        "user_id": driver_id,
+        "balance": 0.0,
+        "transactions": [],
+        "minimum_balance_required": 1000.0
+    }
+    await db.wallets.insert_one(wallet_data)
+    
+    return {
+        "success": True,
+        "driver_id": driver_id,
+        "message": "Registration submitted. Awaiting admin approval.",
         "approval_status": DriverApprovalStatus.PENDING.value
     }
 
