@@ -40,8 +40,12 @@ export default function LoginScreen() {
         setOtpSent(true);
         Alert.alert('Success', `OTP sent to ${phone}\nUse: 123456 (Mock OTP)`);
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send OTP');
+    } catch (error: any) {
+      console.error('Send OTP Error:', error);
+      Alert.alert(
+        'Error', 
+        error.response?.data?.detail || 'Failed to send OTP. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -76,7 +80,11 @@ export default function LoginScreen() {
         }
       }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Invalid OTP');
+      console.error('Verify OTP Error:', error);
+      Alert.alert(
+        'Error', 
+        error.response?.data?.detail || 'Invalid OTP. Please try again.'
+      );
     } finally {
       setLoading(false);
     }

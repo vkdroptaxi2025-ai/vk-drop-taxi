@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Input } from '../../components/Input';
@@ -30,6 +31,11 @@ export default function RegisterCustomerScreen() {
       return;
     }
 
+    if (name.trim().length < 2) {
+      Alert.alert('Error', 'Name must be at least 2 characters');
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await registerCustomer({
@@ -44,7 +50,11 @@ export default function RegisterCustomerScreen() {
         ]);
       }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Registration failed');
+      console.error('Registration Error:', error);
+      Alert.alert(
+        'Error', 
+        error.response?.data?.detail || 'Registration failed. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
