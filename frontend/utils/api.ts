@@ -1,0 +1,91 @@
+import axios from 'axios';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Auth APIs
+export const sendOTP = (phone: string, role: string) =>
+  api.post('/api/auth/send-otp', { phone, role });
+
+export const verifyOTP = (phone: string, otp: string, role: string) =>
+  api.post('/api/auth/verify-otp', { phone, otp, role });
+
+export const registerCustomer = (data: any) =>
+  api.post('/api/customer/register', data);
+
+export const registerDriver = (data: any) =>
+  api.post('/api/driver/register', data);
+
+// Customer APIs
+export const getCustomerProfile = (customerId: string) =>
+  api.get(`/api/customer/${customerId}/profile`);
+
+export const getCustomerBookings = (customerId: string) =>
+  api.get(`/api/customer/${customerId}/bookings`);
+
+// Driver APIs
+export const getDriverProfile = (driverId: string) =>
+  api.get(`/api/driver/${driverId}/profile`);
+
+export const updateDriverStatus = (driverId: string, isOnline: boolean) =>
+  api.put(`/api/driver/${driverId}/status`, { is_online: isOnline });
+
+export const getDriverRides = (driverId: string) =>
+  api.get(`/api/driver/${driverId}/rides`);
+
+export const getPendingRides = (driverId: string) =>
+  api.get(`/api/driver/${driverId}/pending-rides`);
+
+export const getDriverEarnings = (driverId: string) =>
+  api.get(`/api/driver/${driverId}/earnings`);
+
+// Booking APIs
+export const createBooking = (data: any) =>
+  api.post('/api/booking/create', data);
+
+export const updateBooking = (data: any) =>
+  api.put('/api/booking/update', data);
+
+export const getBooking = (bookingId: string) =>
+  api.get(`/api/booking/${bookingId}`);
+
+// Wallet APIs
+export const getWallet = (userId: string) =>
+  api.get(`/api/wallet/${userId}`);
+
+export const addMoney = (userId: string, amount: number) =>
+  api.post('/api/wallet/add-money', { user_id: userId, amount });
+
+export const withdrawMoney = (driverId: string, amount: number) =>
+  api.post('/api/wallet/withdraw', { driver_id: driverId, amount });
+
+// Admin APIs
+export const getAllDrivers = () =>
+  api.get('/api/admin/drivers');
+
+export const approveDriver = (driverId: string, status: string) =>
+  api.put('/api/admin/approve-driver', { driver_id: driverId, approval_status: status });
+
+export const getAllCustomers = () =>
+  api.get('/api/admin/customers');
+
+export const getAllBookings = () =>
+  api.get('/api/admin/bookings');
+
+export const getAdminStats = () =>
+  api.get('/api/admin/stats');
+
+export const getTariffs = () =>
+  api.get('/api/admin/tariffs');
+
+export const updateTariff = (data: any) =>
+  api.put('/api/admin/update-tariff', data);
+
+export default api;
