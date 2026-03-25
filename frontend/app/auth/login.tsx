@@ -61,7 +61,8 @@ export default function LoginScreen() {
           if (role === 'customer') {
             router.replace(`/auth/register-customer?phone=${phone}`);
           } else {
-            router.replace(`/auth/register-driver?phone=${phone}`);
+            // Navigate to simplified driver registration
+            router.replace(`/auth/driver-registration-simple?phone=${phone}`);
           }
         } else {
           // User exists, login
