@@ -65,17 +65,30 @@ export default function LoginScreen() {
       const response = await verifyOTP(phone, otp, role as string);
       if (response.data.success) {
         if (response.data.new_user) {
+          // New user - redirect to registration
           if (role === 'customer') {
             router.replace(`/auth/register-customer?phone=${phone}`);
           } else {
-            router.replace(`/auth/driver-registration-simple?phone=${phone}`);
+            // MANDATORY: Driver must complete registration form
+            router.replace(`/auth/driver-register?phone=${phone}`);
           }
         } else {
+          // Existing user
           await setUser(response.data.user);
           if (role === 'customer') {
             router.replace('/customer/home');
           } else {
-            router.replace('/driver/dashboard');
+            // Check driver approval status
+            const approvalStatus = response.data.user.approval_status;
+            if (approvalStatus === 'approved') {
+              router.replace('/driver/dashboard');
+            } else if (approvalStatus === 'rejected') {
+              Alert.alert('Account Rejected', 'Your application was rejected. Please contact support.');
+              router.replace('/driver/pending-approval');
+            } else {
+              // Pending approval
+              router.replace('/driver/pending-approval');
+            }
           }
         }
       }

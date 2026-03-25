@@ -32,6 +32,7 @@ class UserRole(str, Enum):
 class VehicleType(str, Enum):
     SEDAN = "sedan"
     SUV = "suv"
+    CRYSTA = "crysta"
 
 class BookingStatus(str, Enum):
     REQUESTED = "requested"
@@ -215,6 +216,20 @@ class DocumentVerification(BaseModel):
     document_type: str
     status: DocumentStatus
     remarks: Optional[str] = None
+
+# ==================== NEW CLEAN DRIVER REGISTRATION ====================
+class CleanDriverRegister(BaseModel):
+    """Clean driver registration with all required fields"""
+    phone: str
+    full_name: str
+    address: str
+    driving_license_number: str
+    driving_license_image: str  # Base64 image
+    vehicle_type: str  # sedan, suv, crysta
+    vehicle_number: str
+    rc_book_image: str  # Base64 image
+    insurance_details: str
+    insurance_image: Optional[str] = None  # Optional base64 image
 
 # ==================== HELPER FUNCTIONS ====================
 def send_mock_otp(phone: str):
@@ -627,6 +642,93 @@ async def get_driver_expiry_alerts(driver_id: str):
         raise HTTPException(status_code=404, detail="Driver not found")
     
     return {"success": True, "expiry_alerts": alerts}
+
+# ==================== CLEAN DRIVER REGISTRATION ====================
+@api_router.post("/driver/register")
+async def register_driver_clean(driver_data: CleanDriverRegister):
+    """
+    Clean driver registration endpoint.
+    Creates a new driver with PENDING status.
+    """
+    # Check if driver already exists
+    existing = await db.drivers.find_one({"phone": driver_data.phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Driver with this phone already exists")
+    
+    driver_id = str(uuid.uuid4())
+    
+    # Normalize vehicle type
+    vehicle_type = driver_data.vehicle_type.lower()
+    if vehicle_type not in ['sedan', 'suv', 'crysta']:
+        vehicle_type = 'sedan'
+    
+    driver_document = {
+        "driver_id": driver_id,
+        "phone": driver_data.phone,
+        "full_name": driver_data.full_name,
+        "address": driver_data.address,
+        "driving_license_number": driver_data.driving_license_number,
+        "driving_license_image": driver_data.driving_license_image,
+        "vehicle_type": vehicle_type,
+        "vehicle_number": driver_data.vehicle_number.upper(),
+        "rc_book_image": driver_data.rc_book_image,
+        "insurance_details": driver_data.insurance_details,
+        "insurance_image": driver_data.insurance_image,
+        
+        # Status fields
+        "approval_status": "pending",
+        "rejection_reason": None,
+        "driver_status": "offline",
+        "is_online": False,
+        "duty_on": False,
+        
+        # Stats
+        "earnings": 0.0,
+        "total_trips": 0,
+        "completed_trips": 0,
+        "rating": 5.0,
+        
+        # Location
+        "current_location": None,
+        
+        # Timestamps
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    await db.drivers.insert_one(driver_document)
+    
+    # Create wallet for driver
+    wallet_data = {
+        "user_id": driver_id,
+        "balance": 0.0,
+        "transactions": [],
+        "minimum_balance_required": 1000.0
+    }
+    await db.wallets.insert_one(wallet_data)
+    
+    return {
+        "success": True,
+        "driver_id": driver_id,
+        "message": "Registration submitted successfully. Awaiting admin approval.",
+        "approval_status": "pending"
+    }
+
+@api_router.get("/driver/{driver_id}/status")
+async def get_driver_status(driver_id: str):
+    """Get driver approval and online status"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    return {
+        "success": True,
+        "driver_id": driver_id,
+        "approval_status": driver.get("approval_status", "pending"),
+        "rejection_reason": driver.get("rejection_reason"),
+        "is_online": driver.get("is_online", False),
+        "duty_on": driver.get("duty_on", False)
+    }
 
 # ==================== ADMIN KYC VERIFICATION ENDPOINTS ====================
 @api_router.get("/admin/drivers/pending-verification")

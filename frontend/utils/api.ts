@@ -23,6 +23,9 @@ export const registerCustomer = (data: any) =>
 export const registerDriver = (data: any) =>
   api.post('/api/driver/register', data);
 
+export const getDriverApprovalStatus = (driverId: string) =>
+  api.get(`/api/driver/${driverId}/status`);
+
 // Customer APIs
 export const getCustomerProfile = (customerId: string) =>
   api.get(`/api/customer/${customerId}/profile`);
@@ -70,8 +73,12 @@ export const withdrawMoney = (driverId: string, amount: number) =>
 export const getAllDrivers = () =>
   api.get('/api/admin/drivers');
 
-export const approveDriver = (driverId: string, status: string) =>
-  api.put('/api/admin/approve-driver', { driver_id: driverId, approval_status: status });
+export const approveDriver = (driverId: string, status: string, rejectionReason?: string) =>
+  api.put('/api/admin/driver/approve', { 
+    driver_id: driverId, 
+    approval_status: status,
+    rejection_reason: rejectionReason 
+  });
 
 export const getAllCustomers = () =>
   api.get('/api/admin/customers');
