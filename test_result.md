@@ -454,6 +454,21 @@ metadata:
         agent: "testing"
         comment: "✅ Configurable tariff system working correctly. Default tariffs properly set and fare calculations working. Admin can update tariffs via API. Minimum fare enforcement working properly."
 
+  - task: "Comprehensive Driver Onboarding System"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Comprehensive driver onboarding system with full data structure including basic details, driver photos, driver documents, vehicle details, vehicle documents, vehicle photos, and optional payment details"
+      - working: true
+        agent: "testing"
+        comment: "✅ COMPREHENSIVE DRIVER ONBOARDING SYSTEM TESTING COMPLETE: All 6 tests passed (100% success rate). ✅ POST /api/driver/onboard working perfectly with full data structure (basic_details, driver_photos, driver_documents, vehicle_details, vehicle_documents, vehicle_photos, payment). Returns success with driver_id and approval_status='pending'. ✅ GET /api/driver/{driver_id}/status correctly shows pending status initially and approved status after admin approval. ✅ GET /api/admin/drivers successfully lists all drivers including newly registered ones (28 drivers total). ✅ PUT /api/admin/driver/approve successfully approves drivers with approval_status='approved'. ✅ Admin rejection workflow working perfectly with rejection_reason support. Complete onboarding flow from registration through admin approval/rejection is fully functional."
+
 test_plan:
   current_focus: []
   stuck_tasks: []
@@ -481,3 +496,5 @@ agent_communication:
     message: "🚀 PRODUCTION READINESS TESTING COMPLETE: Executed comprehensive end-to-end testing for production deployment with 85% success rate. ✅ ADMIN SECURITY: Authorized admin phone (9345538164) login successful, unauthorized phones correctly denied with 403 'Access Denied'. ✅ CUSTOMER FLOW: Complete customer registration and booking creation working perfectly - customers can register and create bookings with fare estimates. ✅ BOOKING ASSIGNMENT: Smart booking algorithm working correctly - bookings are being assigned to eligible drivers with proper fare calculation (₹300 for 5.18km distance). ✅ QUEUE SYSTEM VERIFIED: Drivers with 2 completed trips correctly moved to queue (continuous_trips_count=2, in_queue=true, queue_position tracking working). ✅ API STABILITY: All admin APIs returning 200 OK, no 500 errors detected. ❌ DRIVER REGISTRATION ISSUE: Simple driver registration endpoint (/api/driver/register-simple) requires complex payload structure that doesn't match test expectations - this is a test configuration issue, not a system failure. SYSTEM CORE FUNCTIONALITY READY FOR PRODUCTION - All critical flows validated, only test script needs adjustment for driver registration testing."
   - agent: "testing"
     message: "🎯 DRIVER REGISTRATION & APPROVAL FLOW TESTING COMPLETE: Executed specific driver registration and approval workflow testing with 100% success rate (6/6 tests passed). ✅ NEW DRIVER REGISTRATION: POST /api/driver/register working perfectly with phone 9876543299, returns driver_id and approval_status='pending'. ✅ DRIVER STATUS CHECK: GET /api/driver/{driver_id}/status correctly returns pending status. ✅ ADMIN DRIVER LIST: GET /api/admin/drivers successfully shows new driver in list (23 total drivers). ✅ ADMIN APPROVAL: PUT /api/admin/driver/approve successfully approves driver with approval_status='approved'. ✅ APPROVAL VERIFICATION: Driver status correctly updated to 'approved' after admin approval. ✅ ADMIN REJECTION: Separate driver registration and rejection flow working correctly with rejection_reason support. ALL DRIVER REGISTRATION AND APPROVAL ENDPOINTS WORKING PERFECTLY - Complete workflow from registration through admin approval/rejection is fully functional."
+  - agent: "testing"
+    message: "🚀 COMPREHENSIVE DRIVER ONBOARDING SYSTEM TESTING COMPLETE: Executed comprehensive testing of the complete driver onboarding system with 100% success rate (6/6 tests passed). ✅ POST /api/driver/onboard: Full comprehensive onboarding working perfectly with complete data structure including basic_details (name, phone, address, Aadhaar, PAN, license, experience), driver_photos (driver photo, driver with vehicle photo), driver_documents (Aadhaar front/back, license front/back), vehicle_details (type, number, model, year), vehicle_documents (RC front/back, insurance, permit, pollution certificate), vehicle_photos (front, back, left, right), and optional payment details. Returns success with driver_id and approval_status='pending'. ✅ GET /api/driver/{driver_id}/status: Status check working correctly, shows 'pending' initially and 'approved' after admin approval. ✅ GET /api/admin/drivers: Admin can view all drivers (28 total), newly registered drivers appear in list immediately. ✅ PUT /api/admin/driver/approve: Admin approval working perfectly, updates driver status to 'approved'. ✅ Admin rejection workflow: Complete rejection flow working with rejection_reason support. COMPREHENSIVE DRIVER ONBOARDING SYSTEM IS FULLY FUNCTIONAL - All requested endpoints working perfectly for complete driver onboarding lifecycle."

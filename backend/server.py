@@ -217,19 +217,72 @@ class DocumentVerification(BaseModel):
     status: DocumentStatus
     remarks: Optional[str] = None
 
-# ==================== NEW CLEAN DRIVER REGISTRATION ====================
+# ==================== COMPREHENSIVE DRIVER ONBOARDING ====================
+class DriverBasicDetails(BaseModel):
+    full_name: str
+    phone: str
+    address: str
+    aadhaar_number: str
+    pan_number: Optional[str] = None
+    driving_license_number: str
+    driving_experience_years: int
+
+class DriverPhotos(BaseModel):
+    driver_photo: str  # Base64 image
+    driver_with_vehicle_photo: str  # Base64 image - number plate visible
+
+class DriverDocuments(BaseModel):
+    aadhaar_front: str  # Base64 image
+    aadhaar_back: str  # Base64 image
+    license_front: str  # Base64 image
+    license_back: str  # Base64 image
+
+class VehicleDetails(BaseModel):
+    vehicle_type: str  # sedan, suv, crysta
+    vehicle_number: str
+    vehicle_model: str
+    vehicle_year: int
+
+class VehicleDocuments(BaseModel):
+    rc_front: str  # Base64 image
+    rc_back: str  # Base64 image
+    insurance: str  # Base64 image
+    permit: str  # Base64 image
+    pollution_certificate: str  # Base64 image
+
+class VehiclePhotos(BaseModel):
+    front_photo: str  # Base64 image
+    back_photo: str  # Base64 image
+    left_photo: str  # Base64 image
+    right_photo: str  # Base64 image
+
+class PaymentDetails(BaseModel):
+    amount: Optional[int] = 0
+    screenshot: Optional[str] = None  # Base64 image
+
+class ComprehensiveDriverOnboarding(BaseModel):
+    """Complete driver onboarding with all required fields"""
+    basic_details: DriverBasicDetails
+    driver_photos: DriverPhotos
+    driver_documents: DriverDocuments
+    vehicle_details: VehicleDetails
+    vehicle_documents: VehicleDocuments
+    vehicle_photos: VehiclePhotos
+    payment: Optional[PaymentDetails] = None
+
+# Simple driver registration for backward compatibility
 class CleanDriverRegister(BaseModel):
-    """Clean driver registration with all required fields"""
+    """Simple driver registration with basic required fields"""
     phone: str
     full_name: str
     address: str
     driving_license_number: str
-    driving_license_image: str  # Base64 image
-    vehicle_type: str  # sedan, suv, crysta
+    driving_license_image: str
+    vehicle_type: str
     vehicle_number: str
-    rc_book_image: str  # Base64 image
+    rc_book_image: str
     insurance_details: str
-    insurance_image: Optional[str] = None  # Optional base64 image
+    insurance_image: Optional[str] = None
 
 # ==================== HELPER FUNCTIONS ====================
 def send_mock_otp(phone: str):
@@ -643,7 +696,110 @@ async def get_driver_expiry_alerts(driver_id: str):
     
     return {"success": True, "expiry_alerts": alerts}
 
-# ==================== CLEAN DRIVER REGISTRATION ====================
+# ==================== COMPREHENSIVE DRIVER ONBOARDING ====================
+@api_router.post("/driver/onboard")
+async def onboard_driver_comprehensive(data: ComprehensiveDriverOnboarding):
+    """
+    Complete driver onboarding with all details and documents.
+    Creates a new driver with PENDING status.
+    """
+    # Check if driver already exists
+    existing = await db.drivers.find_one({"phone": data.basic_details.phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Driver with this phone already exists")
+    
+    driver_id = str(uuid.uuid4())
+    
+    # Normalize vehicle type
+    vehicle_type = data.vehicle_details.vehicle_type.lower()
+    if vehicle_type not in ['sedan', 'suv', 'crysta']:
+        vehicle_type = 'sedan'
+    
+    driver_document = {
+        "driver_id": driver_id,
+        
+        # Basic Details
+        "phone": data.basic_details.phone,
+        "full_name": data.basic_details.full_name,
+        "address": data.basic_details.address,
+        "aadhaar_number": data.basic_details.aadhaar_number,
+        "pan_number": data.basic_details.pan_number,
+        "driving_license_number": data.basic_details.driving_license_number,
+        "driving_experience_years": data.basic_details.driving_experience_years,
+        
+        # Driver Photos
+        "driver_photo": data.driver_photos.driver_photo,
+        "driver_with_vehicle_photo": data.driver_photos.driver_with_vehicle_photo,
+        
+        # Driver Documents
+        "aadhaar_front": data.driver_documents.aadhaar_front,
+        "aadhaar_back": data.driver_documents.aadhaar_back,
+        "license_front": data.driver_documents.license_front,
+        "license_back": data.driver_documents.license_back,
+        
+        # Vehicle Details
+        "vehicle_type": vehicle_type,
+        "vehicle_number": data.vehicle_details.vehicle_number.upper(),
+        "vehicle_model": data.vehicle_details.vehicle_model,
+        "vehicle_year": data.vehicle_details.vehicle_year,
+        
+        # Vehicle Documents
+        "rc_front": data.vehicle_documents.rc_front,
+        "rc_back": data.vehicle_documents.rc_back,
+        "insurance": data.vehicle_documents.insurance,
+        "permit": data.vehicle_documents.permit,
+        "pollution_certificate": data.vehicle_documents.pollution_certificate,
+        
+        # Vehicle Photos
+        "vehicle_front_photo": data.vehicle_photos.front_photo,
+        "vehicle_back_photo": data.vehicle_photos.back_photo,
+        "vehicle_left_photo": data.vehicle_photos.left_photo,
+        "vehicle_right_photo": data.vehicle_photos.right_photo,
+        
+        # Payment (optional)
+        "payment_amount": data.payment.amount if data.payment else 0,
+        "payment_screenshot": data.payment.screenshot if data.payment else None,
+        
+        # Status fields
+        "approval_status": "pending",
+        "rejection_reason": None,
+        "driver_status": "offline",
+        "is_online": False,
+        "duty_on": False,
+        
+        # Stats
+        "earnings": 0.0,
+        "total_trips": 0,
+        "completed_trips": 0,
+        "rating": 5.0,
+        
+        # Location
+        "current_location": None,
+        
+        # Timestamps
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    await db.drivers.insert_one(driver_document)
+    
+    # Create wallet for driver
+    wallet_data = {
+        "user_id": driver_id,
+        "balance": 0.0,
+        "transactions": [],
+        "minimum_balance_required": 1000.0
+    }
+    await db.wallets.insert_one(wallet_data)
+    
+    return {
+        "success": True,
+        "driver_id": driver_id,
+        "message": "Driver onboarding completed. Awaiting admin approval.",
+        "approval_status": "pending"
+    }
+
+# Keep the simple registration for backward compatibility
 @api_router.post("/driver/register")
 async def register_driver_clean(driver_data: CleanDriverRegister):
     """

@@ -69,8 +69,8 @@ export default function LoginScreen() {
           if (role === 'customer') {
             router.replace(`/auth/register-customer?phone=${phone}`);
           } else {
-            // MANDATORY: Driver must complete registration form
-            router.replace(`/auth/driver-register?phone=${phone}`);
+            // MANDATORY: Driver must complete comprehensive onboarding
+            router.replace(`/auth/driver-onboarding?phone=${phone}`);
           }
         } else {
           // Existing user

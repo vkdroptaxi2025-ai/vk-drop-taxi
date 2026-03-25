@@ -23,6 +23,9 @@ export const registerCustomer = (data: any) =>
 export const registerDriver = (data: any) =>
   api.post('/api/driver/register', data);
 
+export const onboardDriver = (data: any) =>
+  api.post('/api/driver/onboard', data);
+
 export const getDriverApprovalStatus = (driverId: string) =>
   api.get(`/api/driver/${driverId}/status`);
 
