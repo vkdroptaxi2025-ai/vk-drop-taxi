@@ -10,6 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { Colors } from '../../utils/colors';
@@ -26,6 +27,8 @@ export default function LoginScreen() {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const isDriver = role === 'driver';
 
   const handleSendOTP = async () => {
     if (phone.length !== 10) {
@@ -62,15 +65,12 @@ export default function LoginScreen() {
       const response = await verifyOTP(phone, otp, role as string);
       if (response.data.success) {
         if (response.data.new_user) {
-          // Navigate to registration
           if (role === 'customer') {
             router.replace(`/auth/register-customer?phone=${phone}`);
           } else {
-            // Navigate to simplified driver registration
             router.replace(`/auth/driver-registration-simple?phone=${phone}`);
           }
         } else {
-          // User exists, login
           await setUser(response.data.user);
           if (role === 'customer') {
             router.replace('/customer/home');
@@ -91,139 +91,220 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Image
-            source={require('../../assets/images/vk-logo-app.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.title}>
-            {role === 'customer' ? 'Customer' : 'Driver'} Login
-          </Text>
-          <Text style={styles.subtitle}>Enter your phone number to continue</Text>
-        </View>
-
-        <View style={styles.form}>
-          <Input
-            label="Phone Number"
-            placeholder="Enter 10-digit phone number"
-            keyboardType="phone-pad"
-            maxLength={10}
-            value={phone}
-            onChangeText={setPhone}
-            editable={!otpSent}
-          />
-
-          {otpSent && (
-            <Input
-              label="OTP"
-              placeholder="Enter 6-digit OTP"
-              keyboardType="number-pad"
-              maxLength={6}
-              value={otp}
-              onChangeText={setOtp}
-            />
-          )}
-
-          {!otpSent ? (
-            <Button
-              title="Send OTP"
-              onPress={handleSendOTP}
-              loading={loading}
-              variant={role === 'customer' ? 'primary' : 'secondary'}
-            />
-          ) : (
-            <View style={styles.buttonGroup}>
-              <Button
-                title="Verify OTP"
-                onPress={handleVerifyOTP}
-                loading={loading}
-                variant={role === 'customer' ? 'primary' : 'secondary'}
-              />
-              <Button
-                title="Resend OTP"
-                onPress={handleSendOTP}
-                variant="outline"
-                style={styles.resendButton}
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#1A1A1A', '#0D0D0D', '#000000']}
+        style={styles.gradient}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Logo */}
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../assets/images/vk-logo-app.png')}
+                style={styles.logo}
+                resizeMode="contain"
               />
             </View>
-          )}
 
-          <Button
-            title="Back"
-            onPress={() => router.back()}
-            variant="outline"
-            style={styles.backButton}
-          />
-        </View>
+            {/* Title */}
+            <Text style={styles.title}>
+              {isDriver ? 'Driver Login' : 'Customer Login'}
+            </Text>
+            <Text style={styles.subtitle}>
+              {isDriver 
+                ? 'Start earning with VK Drop Taxi' 
+                : 'Book your premium ride'
+              }
+            </Text>
 
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle" size={20} color={Colors.primary} />
-          <Text style={styles.infoText}>Mock OTP: 123456</Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            {/* Login Card */}
+            <View style={styles.card}>
+              <Input
+                label="Mobile Number"
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Enter 10-digit mobile number"
+                keyboardType="phone-pad"
+                maxLength={10}
+                editable={!otpSent}
+                icon={<Ionicons name="call" size={20} color={Colors.gold} />}
+              />
+
+              {otpSent && (
+                <Input
+                  label="OTP"
+                  value={otp}
+                  onChangeText={setOtp}
+                  placeholder="Enter 6-digit OTP"
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  icon={<Ionicons name="key" size={20} color={Colors.gold} />}
+                />
+              )}
+
+              {!otpSent ? (
+                <Button
+                  title="Send OTP"
+                  onPress={handleSendOTP}
+                  loading={loading}
+                  variant="gold"
+                />
+              ) : (
+                <View style={styles.buttonGroup}>
+                  <Button
+                    title="Verify OTP"
+                    onPress={handleVerifyOTP}
+                    loading={loading}
+                    variant="gold"
+                  />
+                  <Button
+                    title="Change Number"
+                    onPress={() => {
+                      setOtpSent(false);
+                      setOtp('');
+                    }}
+                    variant="outline"
+                    style={styles.changeButton}
+                  />
+                </View>
+              )}
+            </View>
+
+            {/* Mock OTP Hint */}
+            <View style={styles.hintContainer}>
+              <Ionicons name="information-circle" size={18} color={Colors.gold} />
+              <Text style={styles.hintText}>Mock OTP: 123456</Text>
+            </View>
+
+            {/* Benefits for Driver */}
+            {isDriver && (
+              <View style={styles.benefitsCard}>
+                <Text style={styles.benefitsTitle}>Why Join VK Drop Taxi?</Text>
+                <View style={styles.benefitRow}>
+                  <Ionicons name="cash" size={20} color={Colors.greenLight} />
+                  <Text style={styles.benefitText}>Earn ₹15,000 - ₹40,000/month</Text>
+                </View>
+                <View style={styles.benefitRow}>
+                  <Ionicons name="time" size={20} color={Colors.greenLight} />
+                  <Text style={styles.benefitText}>Flexible working hours</Text>
+                </View>
+                <View style={styles.benefitRow}>
+                  <Ionicons name="flash" size={20} color={Colors.greenLight} />
+                  <Text style={styles.benefitText}>Instant trip assignments</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Back Button */}
+            <Button
+              title="Back to Home"
+              onPress={() => router.back()}
+              variant="outline"
+              style={styles.backButton}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.background,
+  },
+  gradient: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
     padding: 24,
     paddingTop: 60,
   },
-  header: {
+  logoContainer: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
   },
   logo: {
-    width: 200,
+    width: 120,
     height: 120,
-    marginBottom: 16,
+    borderRadius: 60,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: Colors.text,
-    marginTop: 16,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
     color: Colors.textLight,
-    marginTop: 8,
     textAlign: 'center',
+    marginBottom: 32,
   },
-  form: {
-    marginBottom: 24,
+  card: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   buttonGroup: {
     gap: 12,
   },
-  resendButton: {
+  changeButton: {
     marginTop: 8,
   },
-  backButton: {
-    marginTop: 16,
-  },
-  infoBox: {
+  hintContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.lightGray,
-    padding: 16,
-    borderRadius: 12,
+    justifyContent: 'center',
+    marginTop: 16,
     gap: 8,
   },
-  infoText: {
+  hintText: {
+    fontSize: 13,
+    color: Colors.gold,
+  },
+  benefitsCard: {
+    backgroundColor: 'rgba(46, 125, 50, 0.1)',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: Colors.borderGreen,
+  },
+  benefitsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.greenLight,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  benefitText: {
     fontSize: 14,
-    color: Colors.textLight,
+    color: Colors.text,
+  },
+  backButton: {
+    marginTop: 24,
   },
 });

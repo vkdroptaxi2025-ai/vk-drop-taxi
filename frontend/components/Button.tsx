@@ -1,15 +1,17 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, View } from 'react-native';
 import { Colors } from '../utils/colors';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'gold' | 'green';
   loading?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
+  icon?: React.ReactNode;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -20,74 +22,131 @@ export const Button: React.FC<ButtonProps> = ({
   disabled = false,
   style,
   textStyle,
+  icon,
 }) => {
-  const buttonStyle = [
-    styles.button,
-    variant === 'primary' && styles.primaryButton,
-    variant === 'secondary' && styles.secondaryButton,
-    variant === 'outline' && styles.outlineButton,
-    (disabled || loading) && styles.disabledButton,
-    style,
-  ];
+  const isGradient = variant === 'gold' || variant === 'green' || variant === 'primary' || variant === 'secondary';
+  
+  const getGradientColors = (): [string, string] => {
+    switch (variant) {
+      case 'gold':
+      case 'primary':
+        return ['#FFD700', '#FF8C00'];
+      case 'green':
+      case 'secondary':
+        return ['#4CAF50', '#2E7D32'];
+      default:
+        return ['#FFD700', '#FF8C00'];
+    }
+  };
 
   const buttonTextStyle = [
     styles.buttonText,
-    variant === 'primary' && styles.primaryText,
-    variant === 'secondary' && styles.secondaryText,
+    (variant === 'primary' || variant === 'gold') && styles.goldText,
+    (variant === 'secondary' || variant === 'green') && styles.greenText,
     variant === 'outline' && styles.outlineText,
     textStyle,
   ];
 
+  if (variant === 'outline') {
+    return (
+      <TouchableOpacity
+        style={[
+          styles.button,
+          styles.outlineButton,
+          (disabled || loading) && styles.disabledButton,
+          style,
+        ]}
+        onPress={onPress}
+        disabled={disabled || loading}
+        activeOpacity={0.7}
+      >
+        {loading ? (
+          <ActivityIndicator color={Colors.gold} />
+        ) : (
+          <View style={styles.buttonContent}>
+            {icon}
+            <Text style={buttonTextStyle}>{title}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <TouchableOpacity
-      style={buttonStyle}
+      style={[
+        styles.buttonWrapper,
+        (disabled || loading) && styles.disabledButton,
+        style,
+      ]}
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
     >
-      {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? Colors.primary : Colors.white} />
-      ) : (
-        <Text style={buttonTextStyle}>{title}</Text>
-      )}
+      <LinearGradient
+        colors={getGradientColors()}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.gradientButton}
+      >
+        {loading ? (
+          <ActivityIndicator color={Colors.black} />
+        ) : (
+          <View style={styles.buttonContent}>
+            {icon}
+            <Text style={buttonTextStyle}>{title}</Text>
+          </View>
+        )}
+      </LinearGradient>
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
+  buttonWrapper: {
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
   button: {
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 24,
-    borderRadius: 25,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 50,
+    minHeight: 54,
   },
-  primaryButton: {
-    backgroundColor: Colors.primary,
-  },
-  secondaryButton: {
-    backgroundColor: Colors.secondary,
+  gradientButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 54,
   },
   outlineButton: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: Colors.primary,
+    borderColor: Colors.gold,
   },
   disabledButton: {
     opacity: 0.5,
   },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   buttonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
-  primaryText: {
+  goldText: {
     color: Colors.black,
   },
-  secondaryText: {
+  greenText: {
     color: Colors.white,
   },
   outlineText: {
-    color: Colors.primary,
+    color: Colors.gold,
   },
 });
