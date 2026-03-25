@@ -98,7 +98,7 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Image
-            source={require('../../assets/images/vk-drop-logo.jpg')}
+            source={require('../../assets/images/vk-logo-app.png')}
             style={styles.logo}
             resizeMode="contain"
           />

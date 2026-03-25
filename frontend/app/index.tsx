@@ -38,7 +38,7 @@ export default function Index() {
       <View style={styles.header}>
         <View style={styles.logoContainer}>
           <Image
-            source={require('../assets/images/vk-drop-logo.jpg')}
+            source={require('../assets/images/vk-logo-app.png')}
             style={styles.logo}
             resizeMode="contain"
           />

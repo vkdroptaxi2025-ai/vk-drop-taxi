@@ -4,24 +4,25 @@
     "slug": "vk-drop-taxi",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/vk-drop-logo.jpg",
+    "icon": "./assets/images/icon-1024.png",
     "scheme": "vkdroptaxi",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/images/icon-1024.png"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
+        "backgroundColor": "#222222"
       },
       "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png",
+      "favicon": "./assets/images/icon-192.png",
       "alias": {
         "react-native-maps": "./web-mocks/react-native-maps.js",
         "expo-image-picker": "./web-mocks/expo-image-picker.js",
@@ -33,10 +34,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/vk-drop-logo.jpg",
-          "imageWidth": 300,
+          "image": "./assets/images/splash-1242x2688.png",
+          "imageWidth": 400,
           "resizeMode": "contain",
-          "backgroundColor": "#FFC107"
+          "backgroundColor": "#222222"
         }
       ],
       "@react-native-community/datetimepicker"
