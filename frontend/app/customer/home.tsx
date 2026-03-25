@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MapViewWrapper, MarkerWrapper } from '../../components/MapViewWrapper';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/Button';
@@ -18,10 +19,8 @@ import { Input } from '../../components/Input';
 import { Colors } from '../../utils/colors';
 import { createSmartBooking, getTariffs } from '../../utils/api';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
-// Mock location for web
 let Location: any = null;
 if (Platform.OS !== 'web') {
   Location = require('expo-location');
@@ -34,14 +33,12 @@ export default function CustomerHomeScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
 
-  // Location state
   const [currentLocation, setCurrentLocation] = useState<any>(null);
   const [pickupAddress, setPickupAddress] = useState('');
   const [dropAddress, setDropAddress] = useState('');
   const [pickupCoords, setPickupCoords] = useState({ latitude: 12.97, longitude: 80.24 });
   const [dropCoords, setDropCoords] = useState({ latitude: 13.08, longitude: 80.27 });
 
-  // Booking options
   const [tripType, setTripType] = useState<TripType>('one_way');
   const [vehicleType, setVehicleType] = useState<VehicleType>('sedan');
   const [travelDate, setTravelDate] = useState(new Date());
@@ -49,7 +46,6 @@ export default function CustomerHomeScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  // Fare and booking
   const [estimatedFare, setEstimatedFare] = useState<number | null>(null);
   const [estimatedDistance, setEstimatedDistance] = useState<number | null>(null);
   const [tariffs, setTariffs] = useState<any[]>([]);
@@ -64,18 +60,16 @@ export default function CustomerHomeScreen() {
   const getCurrentLocation = async () => {
     if (Platform.OS === 'web') {
       setCurrentLocation({ latitude: 12.97, longitude: 80.24 });
-      setPickupAddress('Current Location (Web)');
+      setPickupAddress('Current Location');
       return;
     }
-
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setCurrentLocation({ latitude: 12.97, longitude: 80.24 });
-        setPickupAddress('Current Location (Mock)');
+        setPickupAddress('Current Location');
         return;
       }
-
       const location = await Location.getCurrentPositionAsync({});
       setCurrentLocation({
         latitude: location.coords.latitude,
@@ -88,7 +82,7 @@ export default function CustomerHomeScreen() {
       setPickupAddress('Current Location');
     } catch (error) {
       setCurrentLocation({ latitude: 12.97, longitude: 80.24 });
-      setPickupAddress('Current Location (Mock)');
+      setPickupAddress('Current Location');
     }
   };
 
@@ -107,8 +101,7 @@ export default function CustomerHomeScreen() {
       return;
     }
 
-    // Calculate distance using Haversine formula
-    const R = 6371; // Earth radius in km
+    const R = 6371;
     const lat1 = pickupCoords.latitude * Math.PI / 180;
     const lat2 = dropCoords.latitude * Math.PI / 180;
     const deltaLat = (dropCoords.latitude - pickupCoords.latitude) * Math.PI / 180;
@@ -120,14 +113,12 @@ export default function CustomerHomeScreen() {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     let distance = R * c;
 
-    // Apply trip type multiplier
     if (tripType === 'round_trip') {
       distance = distance * 2;
     } else if (tripType === 'local_package') {
-      distance = Math.max(distance, 50); // Minimum 50km for local package
+      distance = Math.max(distance, 50);
     }
 
-    // Get rate from tariffs
     const tariff = tariffs.find(t => t.vehicle_type === vehicleType);
     const rate = tariff ? tariff.rate_per_km : (vehicleType === 'sedan' ? 14 : 18);
     const minFare = tariff ? tariff.minimum_fare : 300;
@@ -143,7 +134,6 @@ export default function CustomerHomeScreen() {
       Alert.alert('Error', 'Please enter pickup and drop locations');
       return;
     }
-
     if (!estimatedFare) {
       Alert.alert('Error', 'Please calculate fare first');
       return;
@@ -171,16 +161,9 @@ export default function CustomerHomeScreen() {
         setShowBookingModal(false);
         Alert.alert(
           'Booking Confirmed!',
-          `Booking ID: ${response.data.booking.booking_id.slice(0, 8)}\nDriver: ${response.data.booking.driver_name || 'Assigned'}\nFare: ₹${response.data.booking.fare}`,
-          [
-            {
-              text: 'View Details',
-              onPress: () => router.push(`/customer/booking-details?id=${response.data.booking.booking_id}`),
-            },
-            { text: 'OK' },
-          ]
+          `Your ride has been booked!\n\nFare: ₹${response.data.booking.fare}\nDriver will arrive shortly.`,
+          [{ text: 'OK' }]
         );
-        // Reset form
         setDropAddress('');
         setEstimatedFare(null);
         setEstimatedDistance(null);
@@ -208,309 +191,309 @@ export default function CustomerHomeScreen() {
     });
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setTravelDate(selectedDate);
-    }
-  };
-
-  const onTimeChange = (event: any, selectedTime?: Date) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      setTravelTime(selectedTime);
-    }
-  };
-
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Hello, {user?.name || 'Customer'}!</Text>
-          <Text style={styles.subtitle}>Where would you like to go?</Text>
-        </View>
-        <TouchableOpacity onPress={logout} style={styles.logoutButton}>
-          <Ionicons name="log-out-outline" size={24} color={Colors.error} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content}>
-        {/* Map */}
-        <View style={styles.mapContainer}>
-          {currentLocation ? (
-            <MapViewWrapper
-              style={styles.map}
-              initialRegion={{
-                latitude: currentLocation.latitude,
-                longitude: currentLocation.longitude,
-                latitudeDelta: 0.1,
-                longitudeDelta: 0.1,
-              }}
-            >
-              <MarkerWrapper coordinate={pickupCoords} title="Pickup" pinColor={Colors.primary} />
-              {dropAddress && (
-                <MarkerWrapper coordinate={dropCoords} title="Drop" pinColor={Colors.secondary} />
-              )}
-            </MapViewWrapper>
-          ) : (
-            <View style={styles.mapPlaceholder}>
-              <Ionicons name="map" size={40} color={Colors.gray} />
-              <Text style={styles.mapPlaceholderText}>Loading map...</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={[styles.actionCard, styles.mainAction]}
-            onPress={() => setShowBookingModal(true)}
-          >
-            <Ionicons name="car" size={36} color={Colors.white} />
-            <Text style={styles.mainActionText}>Book a Ride</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/customer/history')}
-          >
-            <Ionicons name="time" size={28} color={Colors.secondary} />
-            <Text style={styles.actionText}>History</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/customer/wallet')}
-          >
-            <Ionicons name="wallet" size={28} color={Colors.primary} />
-            <Text style={styles.actionText}>Wallet</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      {/* Booking Modal */}
-      <Modal
-        visible={showBookingModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowBookingModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Book a Ride</Text>
-              <TouchableOpacity onPress={() => setShowBookingModal(false)}>
-                <Ionicons name="close" size={28} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Trip Type Selection */}
-              <Text style={styles.sectionLabel}>Trip Type</Text>
-              <View style={styles.tripTypeContainer}>
-                {[
-                  { value: 'one_way', label: 'One Way', icon: 'arrow-forward' },
-                  { value: 'round_trip', label: 'Round Trip', icon: 'repeat' },
-                  { value: 'local_package', label: 'Local Package', icon: 'location' },
-                ].map((type) => (
-                  <TouchableOpacity
-                    key={type.value}
-                    style={[
-                      styles.tripTypeBtn,
-                      tripType === type.value && styles.tripTypeBtnActive,
-                    ]}
-                    onPress={() => setTripType(type.value as TripType)}
-                  >
-                    <Ionicons
-                      name={type.icon as any}
-                      size={20}
-                      color={tripType === type.value ? Colors.white : Colors.text}
-                    />
-                    <Text
-                      style={[
-                        styles.tripTypeText,
-                        tripType === type.value && styles.tripTypeTextActive,
-                      ]}
-                    >
-                      {type.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Pickup & Drop */}
-              <Input
-                label="Pickup Location"
-                value={pickupAddress}
-                onChangeText={setPickupAddress}
-                placeholder="Enter pickup address"
-              />
-
-              <Input
-                label="Drop Location"
-                value={dropAddress}
-                onChangeText={setDropAddress}
-                placeholder="Enter drop address"
-              />
-
-              {/* Date & Time */}
-              <View style={styles.dateTimeRow}>
-                <View style={styles.dateTimeItem}>
-                  <Text style={styles.inputLabel}>Date</Text>
-                  <TouchableOpacity
-                    style={styles.dateTimeBtn}
-                    onPress={() => setShowDatePicker(true)}
-                  >
-                    <Ionicons name="calendar" size={18} color={Colors.secondary} />
-                    <Text style={styles.dateTimeText}>{formatDate(travelDate)}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.dateTimeItem}>
-                  <Text style={styles.inputLabel}>Time</Text>
-                  <TouchableOpacity
-                    style={styles.dateTimeBtn}
-                    onPress={() => setShowTimePicker(true)}
-                  >
-                    <Ionicons name="time" size={18} color={Colors.secondary} />
-                    <Text style={styles.dateTimeText}>{formatTime(travelTime)}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Vehicle Type */}
-              <Text style={styles.sectionLabel}>Vehicle Type</Text>
-              <View style={styles.vehicleContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.vehicleBtn,
-                    vehicleType === 'sedan' && styles.vehicleBtnActive,
-                  ]}
-                  onPress={() => setVehicleType('sedan')}
-                >
-                  <Ionicons
-                    name="car-sport"
-                    size={28}
-                    color={vehicleType === 'sedan' ? Colors.white : Colors.text}
-                  />
-                  <Text
-                    style={[
-                      styles.vehicleText,
-                      vehicleType === 'sedan' && styles.vehicleTextActive,
-                    ]}
-                  >
-                    Sedan
-                  </Text>
-                  <Text
-                    style={[
-                      styles.vehicleRate,
-                      vehicleType === 'sedan' && styles.vehicleRateActive,
-                    ]}
-                  >
-                    ₹14/km
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.vehicleBtn,
-                    vehicleType === 'suv' && styles.vehicleBtnActive,
-                  ]}
-                  onPress={() => setVehicleType('suv')}
-                >
-                  <Ionicons
-                    name="car"
-                    size={28}
-                    color={vehicleType === 'suv' ? Colors.white : Colors.text}
-                  />
-                  <Text
-                    style={[
-                      styles.vehicleText,
-                      vehicleType === 'suv' && styles.vehicleTextActive,
-                    ]}
-                  >
-                    SUV
-                  </Text>
-                  <Text
-                    style={[
-                      styles.vehicleRate,
-                      vehicleType === 'suv' && styles.vehicleRateActive,
-                    ]}
-                  >
-                    ₹18/km
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Calculate Fare Button */}
-              <Button
-                title="Calculate Fare"
-                onPress={calculateFare}
-                variant="outline"
-                style={styles.calculateBtn}
-              />
-
-              {/* Fare Estimate */}
-              {estimatedFare && (
-                <View style={styles.fareCard}>
-                  <View style={styles.fareRow}>
-                    <Text style={styles.fareLabel}>Distance</Text>
-                    <Text style={styles.fareValue}>{estimatedDistance} km</Text>
-                  </View>
-                  <View style={styles.fareRow}>
-                    <Text style={styles.fareLabel}>Trip Type</Text>
-                    <Text style={styles.fareValue}>
-                      {tripType === 'one_way' ? 'One Way' : tripType === 'round_trip' ? 'Round Trip' : 'Local Package'}
-                    </Text>
-                  </View>
-                  <View style={styles.fareDivider} />
-                  <View style={styles.fareRow}>
-                    <Text style={styles.fareTotalLabel}>Estimated Fare</Text>
-                    <Text style={styles.fareTotalValue}>₹{estimatedFare}</Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Book Button */}
-              <Button
-                title="Confirm Booking"
-                onPress={handleBookRide}
-                loading={loading}
-                variant="primary"
-                disabled={!estimatedFare}
-              />
-            </ScrollView>
+      <LinearGradient colors={['#1A1A1A', '#0D0D0D']} style={styles.gradient}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>Hello, {user?.name || 'Customer'}!</Text>
+            <Text style={styles.subtitle}>Where would you like to go?</Text>
           </View>
+          <TouchableOpacity onPress={logout} style={styles.logoutButton}>
+            <Ionicons name="log-out-outline" size={24} color={Colors.gold} />
+          </TouchableOpacity>
         </View>
-      </Modal>
 
-      {/* Date Picker */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={travelDate}
-          mode="date"
-          display="default"
-          onChange={onDateChange}
-          minimumDate={new Date()}
-        />
-      )}
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Map */}
+          <View style={styles.mapContainer}>
+            {currentLocation ? (
+              <MapViewWrapper
+                style={styles.map}
+                initialRegion={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.1,
+                  longitudeDelta: 0.1,
+                }}
+              >
+                <MarkerWrapper coordinate={pickupCoords} title="Pickup" pinColor={Colors.gold} />
+                {dropAddress && (
+                  <MarkerWrapper coordinate={dropCoords} title="Drop" pinColor={Colors.green} />
+                )}
+              </MapViewWrapper>
+            ) : (
+              <View style={styles.mapPlaceholder}>
+                <Ionicons name="map" size={40} color={Colors.gray} />
+                <Text style={styles.mapPlaceholderText}>Loading map...</Text>
+              </View>
+            )}
+          </View>
 
-      {/* Time Picker */}
-      {showTimePicker && (
-        <DateTimePicker
-          value={travelTime}
-          mode="time"
-          display="default"
-          onChange={onTimeChange}
-        />
-      )}
+          {/* Quick Book Button */}
+          <TouchableOpacity
+            style={styles.bookCard}
+            onPress={() => setShowBookingModal(true)}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.bookCardGradient}
+            >
+              <Ionicons name="car-sport" size={32} color={Colors.black} />
+              <View style={styles.bookCardText}>
+                <Text style={styles.bookCardTitle}>Book a Ride</Text>
+                <Text style={styles.bookCardSubtitle}>Premium taxi service</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={24} color={Colors.black} />
+            </LinearGradient>
+          </TouchableOpacity>
 
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      )}
+          {/* Quick Actions */}
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => router.push('/customer/history')}
+            >
+              <View style={styles.actionIcon}>
+                <Ionicons name="time" size={24} color={Colors.gold} />
+              </View>
+              <Text style={styles.actionText}>My Rides</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCard}>
+              <View style={styles.actionIcon}>
+                <Ionicons name="wallet" size={24} color={Colors.greenLight} />
+              </View>
+              <Text style={styles.actionText}>Wallet</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCard}>
+              <View style={styles.actionIcon}>
+                <Ionicons name="help-circle" size={24} color={Colors.gold} />
+              </View>
+              <Text style={styles.actionText}>Support</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Benefits Banner */}
+          <View style={styles.benefitsBanner}>
+            <Text style={styles.benefitsTitle}>Why Choose VK Drop Taxi?</Text>
+            <View style={styles.benefitsRow}>
+              <View style={styles.benefitItem}>
+                <Ionicons name="shield-checkmark" size={20} color={Colors.gold} />
+                <Text style={styles.benefitText}>Safe Rides</Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <Ionicons name="cash" size={20} color={Colors.gold} />
+                <Text style={styles.benefitText}>Low Fare</Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <Ionicons name="star" size={20} color={Colors.gold} />
+                <Text style={styles.benefitText}>Top Drivers</Text>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Booking Modal */}
+        <Modal
+          visible={showBookingModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowBookingModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <LinearGradient
+                colors={['#2C2C2E', '#1C1C1E']}
+                style={styles.modalGradient}
+              >
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Book Your Ride</Text>
+                  <TouchableOpacity onPress={() => setShowBookingModal(false)}>
+                    <Ionicons name="close" size={28} color={Colors.text} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {/* Trip Type */}
+                  <Text style={styles.sectionLabel}>Trip Type</Text>
+                  <View style={styles.tripTypeContainer}>
+                    {[
+                      { value: 'one_way', label: 'One Way', icon: 'arrow-forward' },
+                      { value: 'round_trip', label: 'Round', icon: 'repeat' },
+                      { value: 'local_package', label: 'Local', icon: 'location' },
+                    ].map((type) => (
+                      <TouchableOpacity
+                        key={type.value}
+                        style={[
+                          styles.tripTypeBtn,
+                          tripType === type.value && styles.tripTypeBtnActive,
+                        ]}
+                        onPress={() => setTripType(type.value as TripType)}
+                      >
+                        <Ionicons
+                          name={type.icon as any}
+                          size={18}
+                          color={tripType === type.value ? Colors.black : Colors.gold}
+                        />
+                        <Text
+                          style={[
+                            styles.tripTypeText,
+                            tripType === type.value && styles.tripTypeTextActive,
+                          ]}
+                        >
+                          {type.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Locations */}
+                  <Input
+                    label="Pickup Location"
+                    value={pickupAddress}
+                    onChangeText={setPickupAddress}
+                    placeholder="Enter pickup address"
+                    icon={<Ionicons name="location" size={20} color={Colors.gold} />}
+                  />
+
+                  <Input
+                    label="Drop Location"
+                    value={dropAddress}
+                    onChangeText={setDropAddress}
+                    placeholder="Enter drop address"
+                    icon={<Ionicons name="flag" size={20} color={Colors.greenLight} />}
+                  />
+
+                  {/* Vehicle Type */}
+                  <Text style={styles.sectionLabel}>Select Vehicle</Text>
+                  <View style={styles.vehicleContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.vehicleCard,
+                        vehicleType === 'sedan' && styles.vehicleCardActive,
+                      ]}
+                      onPress={() => setVehicleType('sedan')}
+                    >
+                      <LinearGradient
+                        colors={vehicleType === 'sedan' ? [Colors.gold, Colors.goldDark] : ['#2C2C2E', '#1C1C1E']}
+                        style={styles.vehicleGradient}
+                      >
+                        <Ionicons
+                          name="car-sport"
+                          size={32}
+                          color={vehicleType === 'sedan' ? Colors.black : Colors.gold}
+                        />
+                        <Text style={[styles.vehicleName, vehicleType === 'sedan' && styles.vehicleNameActive]}>
+                          Sedan
+                        </Text>
+                        <Text style={[styles.vehicleRate, vehicleType === 'sedan' && styles.vehicleRateActive]}>
+                          ₹14/km
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.vehicleCard,
+                        vehicleType === 'suv' && styles.vehicleCardActive,
+                      ]}
+                      onPress={() => setVehicleType('suv')}
+                    >
+                      <LinearGradient
+                        colors={vehicleType === 'suv' ? [Colors.greenLight, Colors.greenDark] : ['#2C2C2E', '#1C1C1E']}
+                        style={styles.vehicleGradient}
+                      >
+                        <Ionicons
+                          name="car"
+                          size={32}
+                          color={vehicleType === 'suv' ? Colors.white : Colors.greenLight}
+                        />
+                        <Text style={[styles.vehicleName, vehicleType === 'suv' && styles.vehicleNameActiveSuv]}>
+                          SUV
+                        </Text>
+                        <Text style={[styles.vehicleRate, vehicleType === 'suv' && styles.vehicleRateActiveSuv]}>
+                          ₹18/km
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Calculate Fare */}
+                  <Button
+                    title="Calculate Fare"
+                    onPress={calculateFare}
+                    variant="outline"
+                    style={styles.calculateBtn}
+                  />
+
+                  {/* Fare Estimate */}
+                  {estimatedFare && (
+                    <View style={styles.fareCard}>
+                      <LinearGradient
+                        colors={['rgba(255, 215, 0, 0.15)', 'rgba(255, 215, 0, 0.05)']}
+                        style={styles.fareGradient}
+                      >
+                        <View style={styles.fareRow}>
+                          <Text style={styles.fareLabel}>Distance</Text>
+                          <Text style={styles.fareValue}>{estimatedDistance} km</Text>
+                        </View>
+                        <View style={styles.fareRow}>
+                          <Text style={styles.fareLabel}>Trip Type</Text>
+                          <Text style={styles.fareValue}>
+                            {tripType === 'one_way' ? 'One Way' : tripType === 'round_trip' ? 'Round Trip' : 'Local'}
+                          </Text>
+                        </View>
+                        <View style={styles.fareDivider} />
+                        <View style={styles.fareRow}>
+                          <Text style={styles.fareTotalLabel}>Total Fare</Text>
+                          <Text style={styles.fareTotalValue}>₹{estimatedFare}</Text>
+                        </View>
+                      </LinearGradient>
+                    </View>
+                  )}
+
+                  {/* Book Button */}
+                  <Button
+                    title="Book Now"
+                    onPress={handleBookRide}
+                    loading={loading}
+                    variant="gold"
+                    disabled={!estimatedFare}
+                    icon={<Ionicons name="checkmark-circle" size={20} color={Colors.black} />}
+                  />
+
+                  <View style={{ height: 20 }} />
+                </ScrollView>
+              </LinearGradient>
+            </View>
+          </View>
+        </Modal>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={travelDate}
+            mode="date"
+            display="default"
+            onChange={(e, d) => { setShowDatePicker(false); d && setTravelDate(d); }}
+            minimumDate={new Date()}
+          />
+        )}
+
+        {showTimePicker && (
+          <DateTimePicker
+            value={travelTime}
+            mode="time"
+            display="default"
+            onChange={(e, t) => { setShowTimePicker(false); t && setTravelTime(t); }}
+          />
+        )}
+      </LinearGradient>
     </View>
   );
 }
@@ -518,7 +501,10 @@ export default function CustomerHomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
+  },
+  gradient: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -526,10 +512,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: Colors.primary,
   },
   greeting: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: Colors.text,
   },
@@ -540,16 +525,20 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     padding: 8,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 12,
   },
   content: {
     flex: 1,
+    paddingHorizontal: 16,
   },
   mapContainer: {
-    height: 250,
-    margin: 16,
-    borderRadius: 16,
+    height: 200,
+    borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: Colors.lightGray,
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   map: {
     flex: 1,
@@ -563,52 +552,100 @@ const styles = StyleSheet.create({
     marginTop: 8,
     color: Colors.gray,
   },
+  bookCard: {
+    marginTop: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  bookCardGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    gap: 16,
+  },
+  bookCardText: {
+    flex: 1,
+  },
+  bookCardTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.black,
+  },
+  bookCardSubtitle: {
+    fontSize: 13,
+    color: Colors.black,
+    opacity: 0.7,
+  },
   quickActions: {
     flexDirection: 'row',
-    padding: 16,
     gap: 12,
+    marginTop: 16,
   },
   actionCard: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.cardBackground,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  mainAction: {
-    flex: 2,
-    backgroundColor: Colors.secondary,
-    flexDirection: 'row',
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-  },
-  mainActionText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.white,
+    marginBottom: 8,
   },
   actionText: {
-    marginTop: 6,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: Colors.text,
   },
+  benefitsBanner: {
+    backgroundColor: 'rgba(255, 215, 0, 0.08)',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: Colors.borderGold,
+  },
+  benefitsTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.gold,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  benefitsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  benefitItem: {
+    alignItems: 'center',
+  },
+  benefitText: {
+    fontSize: 11,
+    color: Colors.text,
+    marginTop: 6,
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: Colors.overlay,
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    maxHeight: '92%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: 'hidden',
+  },
+  modalGradient: {
     padding: 24,
-    maxHeight: '90%',
+    paddingTop: 20,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -617,20 +654,20 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: Colors.gold,
   },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 10,
+    color: Colors.textLight,
+    marginBottom: 12,
     marginTop: 8,
   },
   tripTypeContainer: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     marginBottom: 16,
   },
   tripTypeBtn: {
@@ -639,77 +676,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 4,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.borderGold,
+    gap: 6,
   },
   tripTypeBtnActive: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: Colors.gold,
+    borderColor: Colors.gold,
   },
   tripTypeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.text,
+    color: Colors.gold,
   },
   tripTypeTextActive: {
-    color: Colors.white,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  dateTimeRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  dateTimeItem: {
-    flex: 1,
-  },
-  dateTimeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
-  },
-  dateTimeText: {
-    fontSize: 14,
-    color: Colors.text,
+    color: Colors.black,
   },
   vehicleContainer: {
     flexDirection: 'row',
     gap: 12,
     marginBottom: 16,
   },
-  vehicleBtn: {
+  vehicleCard: {
     flex: 1,
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
     borderWidth: 2,
     borderColor: Colors.border,
-    backgroundColor: Colors.white,
   },
-  vehicleBtnActive: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+  vehicleCardActive: {
+    borderColor: Colors.gold,
   },
-  vehicleText: {
+  vehicleGradient: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  vehicleName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: Colors.text,
     marginTop: 8,
   },
-  vehicleTextActive: {
+  vehicleNameActive: {
+    color: Colors.black,
+  },
+  vehicleNameActiveSuv: {
     color: Colors.white,
   },
   vehicleRate: {
@@ -718,22 +730,30 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   vehicleRateActive: {
+    color: Colors.black,
+    opacity: 0.7,
+  },
+  vehicleRateActiveSuv: {
     color: Colors.white,
-    opacity: 0.9,
+    opacity: 0.8,
   },
   calculateBtn: {
-    marginBottom: 12,
+    marginBottom: 16,
   },
   fareCard: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    borderRadius: 12,
     marginBottom: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.borderGold,
+  },
+  fareGradient: {
+    padding: 20,
   },
   fareRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   fareLabel: {
     fontSize: 14,
@@ -746,8 +766,8 @@ const styles = StyleSheet.create({
   },
   fareDivider: {
     height: 1,
-    backgroundColor: Colors.border,
-    marginVertical: 8,
+    backgroundColor: Colors.borderGold,
+    marginVertical: 10,
   },
   fareTotalLabel: {
     fontSize: 16,
@@ -755,18 +775,8 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   fareTotalValue: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: Colors.primary,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    color: Colors.gold,
   },
 });
