@@ -8,7 +8,9 @@ import {
   Alert,
   Modal,
   Image,
+  RefreshControl,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Colors } from '../../utils/colors';
 import {
   getAllDrivers,
@@ -16,28 +18,52 @@ import {
   getAllCustomers,
   getAllBookings,
   getAdminStats,
+  getTariffs,
+  updateTariff,
+  createSmartBooking,
 } from '../../utils/api';
 import { Button } from '../../components/Button';
+import { Input } from '../../components/Input';
 import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'stats' | 'drivers' | 'customers' | 'bookings'>('stats');
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'stats' | 'drivers' | 'bookings' | 'dispatch'>('stats');
   const [stats, setStats] = useState<any>(null);
-  const [drivers, setDrivers] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [bookings, setBookings] = useState([]);
+  const [drivers, setDrivers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [tariffs, setTariffs] = useState<any[]>([]);
   const [selectedDriver, setSelectedDriver] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Manual Assignment State
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignmentMode, setAssignmentMode] = useState<'auto' | 'manual'>('auto');
+  const [manualDriverId, setManualDriverId] = useState('');
+  const [pickupAddress, setPickupAddress] = useState('');
+  const [dropAddress, setDropAddress] = useState('');
+  const [vehicleType, setVehicleType] = useState<'sedan' | 'suv'>('sedan');
+  const [customerId, setCustomerId] = useState('');
 
   useEffect(() => {
     fetchStats();
+    fetchDrivers();
+    fetchTariffs();
+    fetchCustomers();
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'drivers') fetchDrivers();
-    else if (activeTab === 'customers') fetchCustomers();
-    else if (activeTab === 'bookings') fetchBookings();
+    if (activeTab === 'bookings') fetchBookings();
   }, [activeTab]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchStats(), fetchDrivers(), fetchBookings()]);
+    setRefreshing(false);
+  };
 
   const fetchStats = async () => {
     try {
@@ -49,26 +75,20 @@ export default function AdminDashboard() {
   };
 
   const fetchDrivers = async () => {
-    setLoading(true);
     try {
       const response = await getAllDrivers();
-      setDrivers(response.data.drivers);
+      setDrivers(response.data.drivers || []);
     } catch (error) {
       console.error('Failed to fetch drivers:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
   const fetchCustomers = async () => {
-    setLoading(true);
     try {
       const response = await getAllCustomers();
-      setCustomers(response.data.customers);
+      setCustomers(response.data.customers || []);
     } catch (error) {
       console.error('Failed to fetch customers:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -76,11 +96,20 @@ export default function AdminDashboard() {
     setLoading(true);
     try {
       const response = await getAllBookings();
-      setBookings(response.data.bookings);
+      setBookings(response.data.bookings || []);
     } catch (error) {
       console.error('Failed to fetch bookings:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTariffs = async () => {
+    try {
+      const response = await getTariffs();
+      setTariffs(response.data.tariffs || []);
+    } catch (error) {
+      console.error('Failed to fetch tariffs:', error);
     }
   };
 
@@ -96,55 +125,147 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleManualAssignment = async () => {
+    if (!pickupAddress || !dropAddress || !customerId) {
+      Alert.alert('Error', 'Please fill all required fields');
+      return;
+    }
+
+    if (assignmentMode === 'manual' && !manualDriverId) {
+      Alert.alert('Error', 'Please select a driver for manual assignment');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await createSmartBooking({
+        customer_id: customerId,
+        pickup: {
+          latitude: 12.97,
+          longitude: 80.24,
+          address: pickupAddress,
+        },
+        drop: {
+          latitude: 13.08,
+          longitude: 80.27,
+          address: dropAddress,
+        },
+        vehicle_type: vehicleType,
+        assignment_mode: assignmentMode,
+        manual_driver_id: assignmentMode === 'manual' ? manualDriverId : undefined,
+      });
+
+      if (response.data.success) {
+        Alert.alert(
+          'Booking Created!',
+          `ID: ${response.data.booking.booking_id.slice(0, 8)}\nDriver: ${response.data.booking.driver_name || 'Assigned'}\nFare: ₹${response.data.booking.fare}`
+        );
+        setShowAssignModal(false);
+        setPickupAddress('');
+        setDropAddress('');
+        setCustomerId('');
+        fetchBookings();
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to create booking');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getAvailableDrivers = () => {
+    return drivers.filter(
+      (d) =>
+        d.approval_status === 'approved' &&
+        d.duty_on &&
+        d.is_online &&
+        (d.driver_status === 'available' || d.driver_status === 'waiting')
+    );
+  };
+
   const renderStats = () => (
     <View style={styles.statsContainer}>
-      <View style={styles.statCard}>
-        <Ionicons name="people" size={32} color={Colors.primary} />
-        <Text style={styles.statValue}>{stats?.total_customers || 0}</Text>
-        <Text style={styles.statLabel}>Total Customers</Text>
+      <View style={styles.statRow}>
+        <View style={[styles.statCard, { backgroundColor: '#e8f5e9' }]}>
+          <Ionicons name="people" size={28} color="#2e7d32" />
+          <Text style={styles.statValue}>{stats?.total_customers || 0}</Text>
+          <Text style={styles.statLabel}>Customers</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: '#fff3e0' }]}>
+          <Ionicons name="car" size={28} color="#ef6c00" />
+          <Text style={styles.statValue}>{stats?.total_drivers || 0}</Text>
+          <Text style={styles.statLabel}>Drivers</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: '#ffebee' }]}>
+          <Ionicons name="hourglass" size={28} color="#c62828" />
+          <Text style={styles.statValue}>{stats?.pending_drivers || 0}</Text>
+          <Text style={styles.statLabel}>Pending</Text>
+        </View>
       </View>
 
-      <View style={styles.statCard}>
-        <Ionicons name="car" size={32} color={Colors.secondary} />
-        <Text style={styles.statValue}>{stats?.total_drivers || 0}</Text>
-        <Text style={styles.statLabel}>Total Drivers</Text>
+      <View style={styles.statRow}>
+        <View style={[styles.statCard, { backgroundColor: '#e3f2fd' }]}>
+          <Ionicons name="receipt" size={28} color="#1565c0" />
+          <Text style={styles.statValue}>{stats?.total_bookings || 0}</Text>
+          <Text style={styles.statLabel}>Bookings</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: '#f3e5f5' }]}>
+          <Ionicons name="checkmark-circle" size={28} color="#7b1fa2" />
+          <Text style={styles.statValue}>{stats?.completed_bookings || 0}</Text>
+          <Text style={styles.statLabel}>Completed</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: '#e8f5e9' }]}>
+          <Ionicons name="cash" size={28} color="#2e7d32" />
+          <Text style={styles.statValue}>₹{stats?.total_revenue || 0}</Text>
+          <Text style={styles.statLabel}>Revenue</Text>
+        </View>
       </View>
 
-      <View style={styles.statCard}>
-        <Ionicons name="hourglass" size={32} color={Colors.warning} />
-        <Text style={styles.statValue}>{stats?.pending_drivers || 0}</Text>
-        <Text style={styles.statLabel}>Pending Approvals</Text>
-      </View>
-
-      <View style={styles.statCard}>
-        <Ionicons name="receipt" size={32} color={Colors.primary} />
-        <Text style={styles.statValue}>{stats?.total_bookings || 0}</Text>
-        <Text style={styles.statLabel}>Total Bookings</Text>
-      </View>
-
-      <View style={styles.statCard}>
-        <Ionicons name="checkmark-circle" size={32} color={Colors.success} />
-        <Text style={styles.statValue}>{stats?.completed_bookings || 0}</Text>
-        <Text style={styles.statLabel}>Completed</Text>
-      </View>
-
-      <View style={styles.statCard}>
-        <Ionicons name="cash" size={32} color={Colors.secondary} />
-        <Text style={styles.statValue}>₹{stats?.total_revenue || 0}</Text>
-        <Text style={styles.statLabel}>Total Revenue</Text>
-      </View>
-
-      <View style={styles.statCard}>
-        <Ionicons name="trending-up" size={32} color={Colors.primary} />
-        <Text style={styles.statValue}>₹{stats?.total_commission || 0}</Text>
-        <Text style={styles.statLabel}>Commission (10%)</Text>
+      {/* Tariffs */}
+      <View style={styles.tariffsCard}>
+        <Text style={styles.sectionTitle}>Current Tariffs</Text>
+        {tariffs.map((tariff) => (
+          <View key={tariff.vehicle_type} style={styles.tariffRow}>
+            <Text style={styles.tariffType}>{tariff.vehicle_type.toUpperCase()}</Text>
+            <Text style={styles.tariffRate}>₹{tariff.rate_per_km}/km</Text>
+            <Text style={styles.tariffMin}>Min: ₹{tariff.minimum_fare}</Text>
+          </View>
+        ))}
       </View>
     </View>
   );
 
   const renderDrivers = () => (
     <ScrollView style={styles.listContainer}>
-      {drivers.map((driver: any) => (
+      {/* Available Drivers Section */}
+      <Text style={styles.sectionTitle}>Available Drivers ({getAvailableDrivers().length})</Text>
+      {getAvailableDrivers().map((driver) => (
+        <View key={driver.driver_id} style={[styles.listItem, styles.availableDriver]}>
+          <View style={styles.listItemHeader}>
+            <View>
+              <Text style={styles.listItemTitle}>
+                {driver.personal_details?.full_name || driver.name}
+              </Text>
+              <Text style={styles.listItemSubtitle}>{driver.phone}</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: Colors.success }]}>
+              <Text style={styles.statusText}>ONLINE</Text>
+            </View>
+          </View>
+          <Text style={styles.listItemDetails}>
+            {(driver.vehicle_details?.vehicle_type || driver.vehicle_type || '').toUpperCase()} •{' '}
+            {driver.vehicle_details?.vehicle_number || driver.vehicle_number}
+          </Text>
+        </View>
+      ))}
+
+      {/* All Drivers */}
+      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>All Drivers ({drivers.length})</Text>
+      {drivers.map((driver) => (
         <TouchableOpacity
           key={driver.driver_id}
           style={styles.listItem}
@@ -152,74 +273,65 @@ export default function AdminDashboard() {
         >
           <View style={styles.listItemHeader}>
             <View>
-              <Text style={styles.listItemTitle}>{driver.name}</Text>
+              <Text style={styles.listItemTitle}>
+                {driver.personal_details?.full_name || driver.name}
+              </Text>
               <Text style={styles.listItemSubtitle}>{driver.phone}</Text>
             </View>
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor:
-                driver.approval_status === 'approved' ? Colors.success :
-                driver.approval_status === 'rejected' ? Colors.error :
-                Colors.warning
-              }
-            ]}>
-              <Text style={styles.statusText}>
-                {driver.approval_status.toUpperCase()}
-              </Text>
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor:
+                    driver.approval_status === 'approved'
+                      ? Colors.success
+                      : driver.approval_status === 'rejected'
+                      ? Colors.error
+                      : Colors.warning,
+                },
+              ]}
+            >
+              <Text style={styles.statusText}>{driver.approval_status?.toUpperCase()}</Text>
             </View>
           </View>
           <Text style={styles.listItemDetails}>
-            {driver.vehicle_type.toUpperCase()} • {driver.vehicle_number}
+            {(driver.vehicle_details?.vehicle_type || driver.vehicle_type || '').toUpperCase()} •{' '}
+            {driver.vehicle_details?.vehicle_number || driver.vehicle_number}
           </Text>
         </TouchableOpacity>
       ))}
     </ScrollView>
   );
 
-  const renderCustomers = () => (
-    <ScrollView style={styles.listContainer}>
-      {customers.map((customer: any) => (
-        <View key={customer.user_id} style={styles.listItem}>
-          <View style={styles.listItemHeader}>
-            <View>
-              <Text style={styles.listItemTitle}>{customer.name}</Text>
-              <Text style={styles.listItemSubtitle}>{customer.phone}</Text>
-            </View>
-            <Ionicons name="person-circle" size={32} color={Colors.primary} />
-          </View>
-          <Text style={styles.listItemDetails}>
-            Joined: {new Date(customer.created_at).toLocaleDateString()}
-          </Text>
-        </View>
-      ))}
-    </ScrollView>
-  );
-
   const renderBookings = () => (
     <ScrollView style={styles.listContainer}>
-      {bookings.map((booking: any) => (
+      {bookings.map((booking) => (
         <View key={booking.booking_id} style={styles.listItem}>
           <View style={styles.listItemHeader}>
-            <Text style={styles.listItemTitle}>
-              #{booking.booking_id.slice(0, 8)}
-            </Text>
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor:
-                booking.status === 'completed' ? Colors.success :
-                booking.status === 'cancelled' ? Colors.error :
-                booking.status === 'ongoing' ? Colors.warning :
-                Colors.primary
-              }
-            ]}>
-              <Text style={styles.statusText}>{booking.status.toUpperCase()}</Text>
+            <Text style={styles.listItemTitle}>#{booking.booking_id.slice(0, 8)}</Text>
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor:
+                    booking.status === 'completed'
+                      ? Colors.success
+                      : booking.status === 'cancelled'
+                      ? Colors.error
+                      : booking.status === 'ongoing'
+                      ? Colors.warning
+                      : Colors.primary,
+                },
+              ]}
+            >
+              <Text style={styles.statusText}>{booking.status?.toUpperCase()}</Text>
             </View>
           </View>
           <Text style={styles.listItemSubtitle} numberOfLines={1}>
-            From: {booking.pickup.address}
+            From: {booking.pickup?.address}
           </Text>
           <Text style={styles.listItemSubtitle} numberOfLines={1}>
-            To: {booking.drop.address}
+            To: {booking.drop?.address}
           </Text>
           <View style={styles.bookingFooter}>
             <Text style={styles.listItemDetails}>
@@ -232,71 +344,270 @@ export default function AdminDashboard() {
     </ScrollView>
   );
 
+  const renderDispatch = () => (
+    <View style={styles.dispatchContainer}>
+      <View style={styles.assignmentModeCard}>
+        <Text style={styles.sectionTitle}>Assignment Mode</Text>
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeBtn, assignmentMode === 'auto' && styles.modeBtnActive]}
+            onPress={() => setAssignmentMode('auto')}
+          >
+            <Ionicons
+              name="flash"
+              size={20}
+              color={assignmentMode === 'auto' ? Colors.white : Colors.text}
+            />
+            <Text style={[styles.modeText, assignmentMode === 'auto' && styles.modeTextActive]}>
+              Auto Assign
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, assignmentMode === 'manual' && styles.modeBtnActive]}
+            onPress={() => setAssignmentMode('manual')}
+          >
+            <Ionicons
+              name="hand-left"
+              size={20}
+              color={assignmentMode === 'manual' ? Colors.white : Colors.text}
+            />
+            <Text style={[styles.modeText, assignmentMode === 'manual' && styles.modeTextActive]}>
+              Manual Assign
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Button
+        title="Create New Booking"
+        onPress={() => setShowAssignModal(true)}
+        variant="primary"
+        style={styles.createBookingBtn}
+      />
+
+      {/* Available Drivers for Assignment */}
+      <Text style={styles.sectionTitle}>Available for Assignment</Text>
+      <ScrollView style={styles.driverList}>
+        {getAvailableDrivers().length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="car-outline" size={48} color={Colors.gray} />
+            <Text style={styles.emptyText}>No drivers available</Text>
+          </View>
+        ) : (
+          getAvailableDrivers().map((driver) => (
+            <View key={driver.driver_id} style={styles.dispatchDriverCard}>
+              <View style={styles.driverCardLeft}>
+                <View style={[styles.onlineIndicator, { backgroundColor: Colors.success }]} />
+                <View>
+                  <Text style={styles.driverName}>
+                    {driver.personal_details?.full_name || driver.name}
+                  </Text>
+                  <Text style={styles.driverVehicle}>
+                    {(driver.vehicle_details?.vehicle_type || driver.vehicle_type || '').toUpperCase()} •{' '}
+                    {driver.vehicle_details?.vehicle_number || driver.vehicle_number}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.driverCardRight}>
+                <Text style={styles.driverStatus}>{driver.driver_status || 'Available'}</Text>
+                <Text style={styles.driverTrips}>
+                  Trips: {driver.continuous_trips_count || 0}/2
+                </Text>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>VK Drop Taxi Admin</Text>
-        <Text style={styles.headerSubtitle}>Dashboard</Text>
+        <Text style={styles.headerTitle}>VK Drop Taxi</Text>
+        <Text style={styles.headerSubtitle}>Admin Dashboard</Text>
       </View>
 
       {/* Tabs */}
       <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'stats' && styles.activeTab]}
-          onPress={() => setActiveTab('stats')}
-        >
-          <Ionicons name="stats-chart" size={20} color={activeTab === 'stats' ? Colors.primary : Colors.gray} />
-          <Text style={[styles.tabText, activeTab === 'stats' && styles.activeTabText]}>
-            Stats
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'drivers' && styles.activeTab]}
-          onPress={() => setActiveTab('drivers')}
-        >
-          <Ionicons name="car" size={20} color={activeTab === 'drivers' ? Colors.primary : Colors.gray} />
-          <Text style={[styles.tabText, activeTab === 'drivers' && styles.activeTabText]}>
-            Drivers
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.verifyButton}
-          onPress={() => router.push('/admin/driver-verification')}
-        >
-          <Ionicons name="shield-checkmark" size={20} color={Colors.white} />
-          <Text style={styles.verifyButtonText}>Verify</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'customers' && styles.activeTab]}
-          onPress={() => setActiveTab('customers')}
-        >
-          <Ionicons name="people" size={20} color={activeTab === 'customers' ? Colors.primary : Colors.gray} />
-          <Text style={[styles.tabText, activeTab === 'customers' && styles.activeTabText]}>
-            Customers
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'bookings' && styles.activeTab]}
-          onPress={() => setActiveTab('bookings')}
-        >
-          <Ionicons name="receipt" size={20} color={activeTab === 'bookings' ? Colors.primary : Colors.gray} />
-          <Text style={[styles.tabText, activeTab === 'bookings' && styles.activeTabText]}>
-            Bookings
-          </Text>
-        </TouchableOpacity>
+        {[
+          { key: 'stats', label: 'Stats', icon: 'stats-chart' },
+          { key: 'drivers', label: 'Drivers', icon: 'car' },
+          { key: 'bookings', label: 'Bookings', icon: 'receipt' },
+          { key: 'dispatch', label: 'Dispatch', icon: 'navigate' },
+        ].map((tab) => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+            onPress={() => setActiveTab(tab.key as any)}
+          >
+            <Ionicons
+              name={tab.icon as any}
+              size={20}
+              color={activeTab === tab.key ? Colors.primary : Colors.gray}
+            />
+            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {activeTab === 'stats' && renderStats()}
         {activeTab === 'drivers' && renderDrivers()}
-        {activeTab === 'customers' && renderCustomers()}
         {activeTab === 'bookings' && renderBookings()}
+        {activeTab === 'dispatch' && renderDispatch()}
       </ScrollView>
+
+      {/* Verify Button */}
+      <TouchableOpacity
+        style={styles.verifyFab}
+        onPress={() => router.push('/admin/driver-verification')}
+      >
+        <Ionicons name="shield-checkmark" size={24} color={Colors.white} />
+      </TouchableOpacity>
+
+      {/* Manual Assignment Modal */}
+      <Modal
+        visible={showAssignModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAssignModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Booking</Text>
+              <TouchableOpacity onPress={() => setShowAssignModal(false)}>
+                <Ionicons name="close" size={28} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView>
+              <Text style={styles.inputLabel}>Customer</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={customerId}
+                  onValueChange={(value) => setCustomerId(value)}
+                >
+                  <Picker.Item label="Select Customer" value="" />
+                  {customers.map((c) => (
+                    <Picker.Item
+                      key={c.user_id}
+                      label={`${c.name} (${c.phone})`}
+                      value={c.user_id}
+                    />
+                  ))}
+                </Picker>
+              </View>
+
+              <Input
+                label="Pickup Address"
+                value={pickupAddress}
+                onChangeText={setPickupAddress}
+                placeholder="Enter pickup location"
+              />
+
+              <Input
+                label="Drop Address"
+                value={dropAddress}
+                onChangeText={setDropAddress}
+                placeholder="Enter drop location"
+              />
+
+              <Text style={styles.inputLabel}>Vehicle Type</Text>
+              <View style={styles.vehicleRow}>
+                <TouchableOpacity
+                  style={[styles.vehicleBtn, vehicleType === 'sedan' && styles.vehicleBtnActive]}
+                  onPress={() => setVehicleType('sedan')}
+                >
+                  <Text
+                    style={[
+                      styles.vehicleBtnText,
+                      vehicleType === 'sedan' && styles.vehicleBtnTextActive,
+                    ]}
+                  >
+                    Sedan
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.vehicleBtn, vehicleType === 'suv' && styles.vehicleBtnActive]}
+                  onPress={() => setVehicleType('suv')}
+                >
+                  <Text
+                    style={[
+                      styles.vehicleBtnText,
+                      vehicleType === 'suv' && styles.vehicleBtnTextActive,
+                    ]}
+                  >
+                    SUV
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.inputLabel}>Assignment Mode</Text>
+              <View style={styles.modeToggle}>
+                <TouchableOpacity
+                  style={[styles.modeBtn, assignmentMode === 'auto' && styles.modeBtnActive]}
+                  onPress={() => setAssignmentMode('auto')}
+                >
+                  <Text
+                    style={[styles.modeText, assignmentMode === 'auto' && styles.modeTextActive]}
+                  >
+                    Auto
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modeBtn, assignmentMode === 'manual' && styles.modeBtnActive]}
+                  onPress={() => setAssignmentMode('manual')}
+                >
+                  <Text
+                    style={[styles.modeText, assignmentMode === 'manual' && styles.modeTextActive]}
+                  >
+                    Manual
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {assignmentMode === 'manual' && (
+                <>
+                  <Text style={styles.inputLabel}>Select Driver</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={manualDriverId}
+                      onValueChange={(value) => setManualDriverId(value)}
+                    >
+                      <Picker.Item label="Select Driver" value="" />
+                      {getAvailableDrivers().map((d) => (
+                        <Picker.Item
+                          key={d.driver_id}
+                          label={`${d.personal_details?.full_name || d.name} (${
+                            d.vehicle_details?.vehicle_number || d.vehicle_number
+                          })`}
+                          value={d.driver_id}
+                        />
+                      ))}
+                    </Picker>
+                  </View>
+                </>
+              )}
+
+              <Button
+                title="Create Booking"
+                onPress={handleManualAssignment}
+                variant="primary"
+                loading={loading}
+                style={{ marginTop: 16 }}
+              />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Driver Details Modal */}
       <Modal
@@ -318,7 +629,9 @@ export default function AdminDashboard() {
               <ScrollView>
                 <View style={styles.driverInfo}>
                   <Text style={styles.infoLabel}>Name</Text>
-                  <Text style={styles.infoValue}>{selectedDriver.name}</Text>
+                  <Text style={styles.infoValue}>
+                    {selectedDriver.personal_details?.full_name || selectedDriver.name}
+                  </Text>
                 </View>
 
                 <View style={styles.driverInfo}>
@@ -327,36 +640,27 @@ export default function AdminDashboard() {
                 </View>
 
                 <View style={styles.driverInfo}>
-                  <Text style={styles.infoLabel}>Vehicle Type</Text>
-                  <Text style={styles.infoValue}>{selectedDriver.vehicle_type.toUpperCase()}</Text>
-                </View>
-
-                <View style={styles.driverInfo}>
-                  <Text style={styles.infoLabel}>Vehicle Number</Text>
-                  <Text style={styles.infoValue}>{selectedDriver.vehicle_number}</Text>
+                  <Text style={styles.infoLabel}>Vehicle</Text>
+                  <Text style={styles.infoValue}>
+                    {(
+                      selectedDriver.vehicle_details?.vehicle_type || selectedDriver.vehicle_type
+                    )?.toUpperCase()}{' '}
+                    - {selectedDriver.vehicle_details?.vehicle_number || selectedDriver.vehicle_number}
+                  </Text>
                 </View>
 
                 <View style={styles.driverInfo}>
                   <Text style={styles.infoLabel}>Status</Text>
-                  <Text style={styles.infoValue}>{selectedDriver.approval_status.toUpperCase()}</Text>
+                  <Text style={styles.infoValue}>
+                    {selectedDriver.approval_status?.toUpperCase()}
+                  </Text>
                 </View>
 
-                {/* License Image */}
-                <View style={styles.documentSection}>
-                  <Text style={styles.documentLabel}>Driving License</Text>
-                  <Image
-                    source={{ uri: selectedDriver.license_image }}
-                    style={styles.documentImage}
-                  />
-                </View>
-
-                {/* RC Image */}
-                <View style={styles.documentSection}>
-                  <Text style={styles.documentLabel}>Vehicle RC</Text>
-                  <Image
-                    source={{ uri: selectedDriver.rc_image }}
-                    style={styles.documentImage}
-                  />
+                <View style={styles.driverInfo}>
+                  <Text style={styles.infoLabel}>Duty Status</Text>
+                  <Text style={styles.infoValue}>
+                    {selectedDriver.duty_on ? 'ON' : 'OFF'} | {selectedDriver.driver_status || 'offline'}
+                  </Text>
                 </View>
 
                 {selectedDriver.approval_status === 'pending' && (
@@ -387,20 +691,20 @@ export default function AdminDashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#f5f5f5',
   },
   header: {
     backgroundColor: Colors.primary,
-    padding: 24,
+    padding: 20,
     paddingTop: 60,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: Colors.text,
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: Colors.textLight,
     marginTop: 4,
   },
@@ -409,37 +713,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    alignItems: 'center',
   },
   tab: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 8,
-  },
-  verifyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.secondary,
-    paddingHorizontal: 16,
     paddingVertical: 12,
-    marginRight: 8,
-    borderRadius: 20,
     gap: 4,
-  },
-  verifyButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.white,
   },
   activeTab: {
     borderBottomWidth: 3,
     borderBottomColor: Colors.primary,
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.gray,
     fontWeight: '600',
   },
@@ -450,26 +736,63 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statsContainer: {
+    padding: 16,
+  },
+  statRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 8,
+    gap: 12,
+    marginBottom: 12,
   },
   statCard: {
-    width: '50%',
+    flex: 1,
     padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
     color: Colors.text,
     marginTop: 8,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.textLight,
     marginTop: 4,
-    textAlign: 'center',
+  },
+  tariffsCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  tariffRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  tariffType: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  tariffRate: {
+    fontSize: 14,
+    color: Colors.secondary,
+    fontWeight: 'bold',
+  },
+  tariffMin: {
+    fontSize: 12,
+    color: Colors.textLight,
   },
   listContainer: {
     padding: 16,
@@ -477,29 +800,33 @@ const styles = StyleSheet.create({
   listItem: {
     backgroundColor: Colors.white,
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    padding: 14,
+    marginBottom: 10,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 2,
-    elevation: 2,
+  },
+  availableDriver: {
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.success,
   },
   listItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   listItemTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     color: Colors.text,
   },
   listItemSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textLight,
-    marginTop: 4,
+    marginTop: 2,
   },
   listItemDetails: {
     fontSize: 12,
@@ -507,9 +834,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   statusText: {
     fontSize: 10,
@@ -530,6 +857,115 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: Colors.primary,
   },
+  dispatchContainer: {
+    padding: 16,
+  },
+  assignmentModeCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 8,
+  },
+  modeBtnActive: {
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
+  },
+  modeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  modeTextActive: {
+    color: Colors.white,
+  },
+  createBookingBtn: {
+    marginBottom: 16,
+  },
+  driverList: {
+    maxHeight: 400,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.gray,
+  },
+  dispatchDriverCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+  },
+  driverCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  onlineIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  driverName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  driverVehicle: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  driverCardRight: {
+    alignItems: 'flex-end',
+  },
+  driverStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.secondary,
+  },
+  driverTrips: {
+    fontSize: 11,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  verifyFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -546,15 +982,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: Colors.text,
   },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    backgroundColor: Colors.white,
+    marginBottom: 8,
+  },
+  vehicleRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  vehicleBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  vehicleBtnActive: {
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
+  },
+  vehicleBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  vehicleBtnTextActive: {
+    color: Colors.white,
+  },
   driverInfo: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   infoLabel: {
     fontSize: 12,
@@ -562,29 +1036,14 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   infoValue: {
-    fontSize: 16,
+    fontSize: 15,
     color: Colors.text,
     fontWeight: '600',
-  },
-  documentSection: {
-    marginTop: 16,
-  },
-  documentLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  documentImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    backgroundColor: Colors.lightGray,
   },
   actionButtons: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 24,
+    marginTop: 20,
   },
   approveButton: {
     flex: 1,

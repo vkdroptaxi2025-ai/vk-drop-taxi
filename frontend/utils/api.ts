@@ -88,4 +88,58 @@ export const getTariffs = () =>
 export const updateTariff = (data: any) =>
   api.put('/api/admin/update-tariff', data);
 
+// ==================== PHASE 2 & 3: DISPATCH APIs ====================
+
+// Driver Duty APIs
+export const updateDutyStatus = (driverId: string, data: {
+  duty_on: boolean;
+  go_home_mode?: boolean;
+  home_latitude?: number;
+  home_longitude?: number;
+  home_address?: string;
+}) => api.put(`/api/driver/${driverId}/duty-status`, data);
+
+export const updateDriverLocation = (driverId: string, data: {
+  latitude: number;
+  longitude: number;
+  address: string;
+}) => api.put(`/api/driver/${driverId}/location`, data);
+
+export const getQueueStatus = (driverId: string) =>
+  api.get(`/api/driver/${driverId}/queue-status`);
+
+export const getDriverProfileComplete = (driverId: string) =>
+  api.get(`/api/driver/${driverId}/profile-complete`);
+
+// Smart Booking APIs
+export const createSmartBooking = (data: {
+  customer_id: string;
+  pickup: { latitude: number; longitude: number; address: string };
+  drop: { latitude: number; longitude: number; address: string };
+  vehicle_type: string;
+  assignment_mode?: string;
+  manual_driver_id?: string;
+}) => api.post('/api/booking/create-smart', data);
+
+// Accept/Reject Booking
+export const acceptRejectBooking = (data: {
+  booking_id: string;
+  driver_id: string;
+  action: 'accept' | 'reject';
+}) => api.post('/api/booking/accept-reject', data);
+
+// Trip Lifecycle
+export const startTrip = (bookingId: string) =>
+  api.put(`/api/booking/${bookingId}/start-trip`);
+
+export const completeTrip = (bookingId: string) =>
+  api.put(`/api/booking/${bookingId}/complete-trip`);
+
+// Admin Dispatch APIs
+export const getPendingVerificationDrivers = () =>
+  api.get('/api/admin/drivers/pending-verification');
+
+export const getAvailableDriversForAssignment = () =>
+  api.get('/api/admin/drivers');
+
 export default api;

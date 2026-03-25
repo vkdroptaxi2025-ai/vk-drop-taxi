@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { Colors } from '../utils/colors';
@@ -28,6 +28,10 @@ export default function Index() {
     router.push(`/auth/login?role=${role}`);
   };
 
+  const handleAdminAccess = () => {
+    router.push('/admin/dashboard');
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -42,7 +46,11 @@ export default function Index() {
       </View>
 
       {/* Role Selection */}
-      <View style={styles.content}>
+      <ScrollView 
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.title}>Welcome!</Text>
         <Text style={styles.subtitle}>Select your role to continue</Text>
 
@@ -53,7 +61,7 @@ export default function Index() {
             activeOpacity={0.8}
           >
             <View style={styles.iconCircle}>
-              <Ionicons name="person" size={40} color={Colors.primary} />
+              <Ionicons name="person" size={32} color={Colors.primary} />
             </View>
             <Text style={styles.roleTitle}>Customer</Text>
             <Text style={styles.roleDescription}>Book a ride</Text>
@@ -65,18 +73,30 @@ export default function Index() {
             activeOpacity={0.8}
           >
             <View style={styles.iconCircle}>
-              <Ionicons name="car" size={40} color={Colors.secondary} />
+              <Ionicons name="car" size={32} color={Colors.secondary} />
             </View>
             <Text style={styles.roleTitle}>Driver</Text>
             <Text style={styles.roleDescription}>Start earning</Text>
           </TouchableOpacity>
-        </View>
-      </View>
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Safe • Reliable • Affordable</Text>
-      </View>
+          <TouchableOpacity
+            style={[styles.roleCard, styles.adminCard]}
+            onPress={handleAdminAccess}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.iconCircle, styles.adminIconCircle]}>
+              <Ionicons name="shield-checkmark" size={32} color={Colors.text} />
+            </View>
+            <Text style={styles.roleTitle}>Admin</Text>
+            <Text style={styles.roleDescription}>Manage fleet</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Safe • Reliable • Affordable</Text>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -116,6 +136,13 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'center',
   },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    paddingBottom: 40,
+  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -130,12 +157,12 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   buttonContainer: {
-    gap: 20,
+    gap: 12,
   },
   roleCard: {
     backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 30,
+    borderRadius: 16,
+    padding: 20,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -150,20 +177,26 @@ const styles = StyleSheet.create({
   driverCard: {
     borderColor: Colors.secondary,
   },
+  adminCard: {
+    borderColor: Colors.gray,
+  },
+  adminIconCircle: {
+    backgroundColor: Colors.lightGray,
+  },
   iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: Colors.lightGray,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   roleTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: Colors.text,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   roleDescription: {
     fontSize: 14,
