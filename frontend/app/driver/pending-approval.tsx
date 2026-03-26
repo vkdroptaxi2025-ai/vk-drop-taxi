@@ -28,23 +28,44 @@ const COLORS = {
 
 export default function PendingApprovalScreen() {
   const router = useRouter();
-  const { user, logout } = useAuthStore();
+  const { user, logout, loadUser } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string>('pending');
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user?.driver_id) {
-      checkStatus();
-    }
+    // Load user from storage first
+    loadUser().then(() => {
+      console.log('User loaded from storage');
+    });
   }, []);
 
+  useEffect(() => {
+    console.log('User state changed:', user);
+    if (user?.driver_id) {
+      console.log('Driver ID found:', user.driver_id);
+      checkStatus();
+    } else {
+      console.log('No driver_id in user state');
+    }
+  }, [user]);
+
   const checkStatus = async () => {
-    if (!user?.driver_id) return;
+    if (!user?.driver_id) {
+      console.log('No driver_id, cannot check status');
+      setErrorMsg('No driver ID found. Please login again.');
+      return;
+    }
 
     setLoading(true);
+    setErrorMsg(null);
+    console.log('Checking status for driver:', user.driver_id);
+    
     try {
       const response = await getDriverApprovalStatus(user.driver_id);
+      console.log('Status response:', response.data);
+      
       if (response.data.success) {
         setStatus(response.data.approval_status);
         setRejectionReason(response.data.rejection_reason);
@@ -56,8 +77,9 @@ export default function PendingApprovalScreen() {
           ]);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error checking status:', error);
+      setErrorMsg(error.response?.data?.detail || error.message || 'Failed to fetch status');
     } finally {
       setLoading(false);
     }

@@ -152,4 +152,11 @@ export const getPendingVerificationDrivers = () =>
 export const getAvailableDriversForAssignment = () =>
   api.get('/api/admin/drivers');
 
+// Wallet APIs
+export const addWalletMoney = (userId: string, amount: number) =>
+  api.post('/api/wallet/add-money', { user_id: userId, amount });
+
+export const getWalletBalance = (userId: string) =>
+  api.get(`/api/wallet/${userId}`);
+
 export default api;

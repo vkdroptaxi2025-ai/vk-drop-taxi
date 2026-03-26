@@ -160,6 +160,9 @@ export default function DriverOnboardingForm() {
         if (!vehicleLeft) { Alert.alert('Required', 'Upload vehicle left photo'); return false; }
         if (!vehicleRight) { Alert.alert('Required', 'Upload vehicle right photo'); return false; }
         return true;
+      case 7:
+        if (!paymentScreenshot) { Alert.alert('Required', 'Payment screenshot is MANDATORY. Please pay ₹500 and upload proof.'); return false; }
+        return true;
       default:
         return true;
     }
@@ -178,8 +181,8 @@ export default function DriverOnboardingForm() {
   };
 
   const handleSubmit = async () => {
-    // Final validation
-    for (let i = 1; i <= 6; i++) {
+    // Final validation - include payment section (7)
+    for (let i = 1; i <= 7; i++) {
       if (!validateSection(i)) {
         setCurrentSection(i);
         return;
@@ -238,13 +241,15 @@ export default function DriverOnboardingForm() {
       if (response.data.success) {
         setDriverId(response.data.driver_id);
         setSubmitted(true);
+        // Store driver data in auth store
         await setUser({
           driver_id: response.data.driver_id,
           phone: phone as string,
-          full_name: fullName,
+          name: fullName, // Use 'name' not 'full_name' to match authStore interface
           role: 'driver',
           approval_status: 'pending',
         });
+        console.log('Driver registered with ID:', response.data.driver_id);
       }
     } catch (error: any) {
       console.error('Onboarding error:', error);
@@ -471,17 +476,34 @@ export default function DriverOnboardingForm() {
       case 7:
         return (
           <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Payment (Optional)</Text>
-            <Text style={styles.sectionHint}>Attachment fee for driver registration</Text>
+            <Text style={styles.sectionTitle}>Registration Payment</Text>
+            <Text style={styles.sectionHint}>Pay attachment fee to complete registration</Text>
+            
             <View style={styles.paymentCard}>
-              <Text style={styles.paymentAmount}>₹{paymentAmount}</Text>
-              <Text style={styles.paymentNote}>One-time attachment fee</Text>
+              <Text style={styles.paymentAmount}>₹500</Text>
+              <Text style={styles.paymentNote}>One-time attachment fee (NON-REFUNDABLE)</Text>
             </View>
-            <Text style={styles.docLabel}>Payment Screenshot</Text>
+            
+            <View style={styles.upiBox}>
+              <Text style={styles.upiLabel}>UPI ID</Text>
+              <Text style={styles.upiId}>vkdrop@upi</Text>
+              <Text style={styles.upiInstructions}>
+                1. Open any UPI app (GPay, PhonePe, Paytm){'\n'}
+                2. Pay ₹500 to above UPI ID{'\n'}
+                3. Take screenshot of payment{'\n'}
+                4. Upload screenshot below
+              </Text>
+            </View>
+            
+            <Text style={styles.docLabel}>Payment Screenshot <Text style={styles.requiredStar}>* MANDATORY</Text></Text>
             <View style={styles.uploadSingle}>
-              <UploadButton label="Upload Screenshot" value={paymentScreenshot} onPress={() => pickImage(setPaymentScreenshot, 'Payment')} required={false} />
+              <UploadButton label="Upload Payment Proof" value={paymentScreenshot} onPress={() => pickImage(setPaymentScreenshot, 'Payment')} required={true} />
             </View>
-            <Text style={styles.paymentSkip}>You can skip this and pay later</Text>
+            
+            <View style={styles.warningBox}>
+              <Ionicons name="warning" size={20} color={COLORS.error} />
+              <Text style={styles.warningText}>You cannot submit without payment screenshot</Text>
+            </View>
           </View>
         );
 
@@ -771,4 +793,45 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   primaryButtonText: { fontSize: 16, fontWeight: 'bold', color: COLORS.text },
+  // UPI and Payment styles
+  upiBox: {
+    backgroundColor: '#FFF9E6',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  upiLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginBottom: 4,
+  },
+  upiId: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+    marginBottom: 12,
+  },
+  upiInstructions: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 22,
+  },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  warningText: {
+    fontSize: 13,
+    color: COLORS.error,
+    flex: 1,
+  },
 });

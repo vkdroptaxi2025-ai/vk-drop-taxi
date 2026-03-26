@@ -21,6 +21,7 @@ import {
   getTariffs,
   updateTariff,
   createSmartBooking,
+  addWalletMoney,
 } from '../../utils/api';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
@@ -47,6 +48,12 @@ export default function AdminDashboard() {
   const [dropAddress, setDropAddress] = useState('');
   const [vehicleType, setVehicleType] = useState<'sedan' | 'suv'>('sedan');
   const [customerId, setCustomerId] = useState('');
+
+  // Wallet Add State
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [walletDriverId, setWalletDriverId] = useState('');
+  const [walletDriverName, setWalletDriverName] = useState('');
+  const [walletAmount, setWalletAmount] = useState('');
 
   useEffect(() => {
     fetchStats();
@@ -126,6 +133,32 @@ export default function AdminDashboard() {
       console.error('Approve error:', error.response?.data || error.message);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to update driver status');
     }
+  };
+
+  // Add Wallet Balance Handler
+  const handleAddWalletBalance = async () => {
+    if (!walletAmount || parseInt(walletAmount) <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+    try {
+      const response = await addWalletMoney(walletDriverId, parseInt(walletAmount));
+      console.log('Wallet response:', response.data);
+      Alert.alert('Success', `₹${walletAmount} added to ${walletDriverName}'s wallet!`);
+      setShowWalletModal(false);
+      setWalletAmount('');
+      fetchDrivers();
+    } catch (error: any) {
+      console.error('Wallet error:', error.response?.data || error.message);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to add wallet balance');
+    }
+  };
+
+  const openWalletModal = (driverId: string, driverName: string) => {
+    setWalletDriverId(driverId);
+    setWalletDriverName(driverName);
+    setWalletAmount('');
+    setShowWalletModal(true);
   };
 
   const handleManualAssignment = async () => {
@@ -794,9 +827,88 @@ export default function AdminDashboard() {
                   </View>
                 )}
 
+                {/* Add Balance Button for Approved Drivers */}
+                {selectedDriver.approval_status === 'approved' && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: Colors.secondary, marginTop: 16 }]}
+                    onPress={() => {
+                      setSelectedDriver(null);
+                      openWalletModal(
+                        selectedDriver.driver_id,
+                        selectedDriver.full_name || selectedDriver.personal_details?.full_name || 'Driver'
+                      );
+                    }}
+                  >
+                    <Ionicons name="wallet" size={24} color="#fff" />
+                    <Text style={styles.actionBtnText}>ADD WALLET BALANCE</Text>
+                  </TouchableOpacity>
+                )}
+
                 <View style={{ height: 20 }} />
               </ScrollView>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Wallet Add Balance Modal */}
+      <Modal
+        visible={showWalletModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowWalletModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: 400 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Wallet Balance</Text>
+              <TouchableOpacity onPress={() => setShowWalletModal(false)}>
+                <Ionicons name="close" size={28} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ padding: 16 }}>
+              <Text style={{ fontSize: 16, color: Colors.textLight, marginBottom: 8 }}>
+                Driver: <Text style={{ fontWeight: 'bold', color: Colors.text }}>{walletDriverName}</Text>
+              </Text>
+
+              <Text style={{ fontSize: 14, fontWeight: '600', color: Colors.text, marginTop: 16, marginBottom: 8 }}>
+                Enter Amount (₹)
+              </Text>
+              <Input
+                value={walletAmount}
+                onChangeText={setWalletAmount}
+                placeholder="Enter amount"
+                keyboardType="numeric"
+              />
+
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                {[500, 1000, 2000, 5000].map((amt) => (
+                  <TouchableOpacity
+                    key={amt}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      backgroundColor: walletAmount === String(amt) ? Colors.secondary : '#f0f0f0',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => setWalletAmount(String(amt))}
+                  >
+                    <Text style={{ fontWeight: '600', color: walletAmount === String(amt) ? '#fff' : Colors.text }}>
+                      ₹{amt}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Button
+                title={`Add ₹${walletAmount || '0'} to Wallet`}
+                onPress={handleAddWalletBalance}
+                variant="secondary"
+                style={{ marginTop: 24 }}
+              />
+            </View>
           </View>
         </View>
       </Modal>
