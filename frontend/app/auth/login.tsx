@@ -62,50 +62,91 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      // First verify OTP
       const response = await verifyOTP(phone, otp, role as string);
-      if (response.data.success) {
-        if (role === 'customer') {
-          // Customer flow
-          if (response.data.new_user) {
-            router.replace(`/auth/register-customer?phone=${phone}`);
-          } else {
-            await setUser(response.data.user);
-            router.replace('/customer/home');
-          }
+      console.log('Verify OTP response:', response.data);
+      
+      if (!response.data.success) {
+        Alert.alert('Error', 'OTP verification failed');
+        return;
+      }
+
+      if (role === 'customer') {
+        // Customer flow
+        if (response.data.new_user) {
+          router.replace(`/auth/register-customer?phone=${phone}`);
         } else {
-          // DRIVER FLOW - Check status by phone first
+          await setUser(response.data.user);
+          router.replace('/customer/home');
+        }
+      } else {
+        // DRIVER FLOW - ALWAYS check status by phone first
+        console.log('Checking driver status for phone:', phone);
+        
+        try {
           const statusResponse = await getDriverStatusByPhone(phone);
-          console.log('Driver status response:', statusResponse.data);
+          console.log('Driver status API response:', JSON.stringify(statusResponse.data));
           
-          if (!statusResponse.data.found || statusResponse.data.status === 'NOT_FOUND') {
-            // Driver not registered - open registration form
+          const driverStatus = statusResponse.data;
+          
+          // Check if driver NOT FOUND
+          if (!driverStatus.found || driverStatus.status === 'NOT_FOUND') {
+            console.log('Driver NOT FOUND - redirecting to registration');
             router.replace(`/auth/driver-onboarding?phone=${phone}`);
-          } else if (statusResponse.data.status === 'PENDING') {
-            // Driver registered but pending approval
-            await setUser({
-              driver_id: statusResponse.data.driver_id,
-              phone: phone,
-              name: statusResponse.data.full_name,
-              role: 'driver',
-              approval_status: 'pending',
-            });
-            router.replace('/driver/pending-approval');
-          } else if (statusResponse.data.status === 'APPROVED') {
-            // Driver approved - open dashboard
-            await setUser(response.data.user);
-            router.replace('/driver/dashboard');
-          } else if (statusResponse.data.status === 'REJECTED') {
-            // Driver rejected
-            await setUser({
-              driver_id: statusResponse.data.driver_id,
-              phone: phone,
-              name: statusResponse.data.full_name,
-              role: 'driver',
-              approval_status: 'rejected',
-            });
-            Alert.alert('Account Rejected', statusResponse.data.rejection_reason || 'Your application was rejected.');
-            router.replace('/driver/pending-approval');
+            return;
           }
+          
+          // Check status and redirect accordingly
+          switch (driverStatus.status) {
+            case 'PENDING':
+              console.log('Driver PENDING - redirecting to pending screen');
+              await setUser({
+                driver_id: driverStatus.driver_id,
+                phone: phone,
+                name: driverStatus.full_name || 'Driver',
+                role: 'driver',
+                approval_status: 'pending',
+              });
+              router.replace('/driver/pending-approval');
+              break;
+              
+            case 'APPROVED':
+              console.log('Driver APPROVED - redirecting to dashboard');
+              await setUser(response.data.user || {
+                driver_id: driverStatus.driver_id,
+                phone: phone,
+                name: driverStatus.full_name || 'Driver',
+                role: 'driver',
+                approval_status: 'approved',
+              });
+              router.replace('/driver/dashboard');
+              break;
+              
+            case 'REJECTED':
+              console.log('Driver REJECTED');
+              await setUser({
+                driver_id: driverStatus.driver_id,
+                phone: phone,
+                name: driverStatus.full_name || 'Driver',
+                role: 'driver',
+                approval_status: 'rejected',
+              });
+              Alert.alert(
+                'Account Rejected', 
+                driverStatus.rejection_reason || 'Your application was rejected. Please contact support.'
+              );
+              router.replace('/driver/pending-approval');
+              break;
+              
+            default:
+              console.log('Unknown driver status:', driverStatus.status);
+              // Treat unknown status as not registered
+              router.replace(`/auth/driver-onboarding?phone=${phone}`);
+          }
+        } catch (statusError: any) {
+          console.error('Error checking driver status:', statusError);
+          // If status check fails, assume driver not registered
+          router.replace(`/auth/driver-onboarding?phone=${phone}`);
         }
       }
     } catch (error: any) {
