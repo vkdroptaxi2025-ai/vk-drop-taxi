@@ -5,24 +5,22 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Image,
   Alert,
   RefreshControl,
-  Switch,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
+import { Ionicons } from '@expo/vector-icons';
+
+// API imports
 import {
-  updateDutyStatus,
-  getWallet,
-  getQueueStatus,
   getDriverProfileComplete,
-  acceptRejectBooking,
-  startTrip,
-  completeTrip,
+  getWallet,
+  updateDutyStatus,
   getDriverRides,
 } from '../../utils/api';
-import { Ionicons } from '@expo/vector-icons';
 
 // Yellow + Green Theme
 const COLORS = {
@@ -36,500 +34,380 @@ const COLORS = {
   error: '#DC3545',
   success: '#28A745',
   warning: '#FF9800',
+  offline: '#9E9E9E',
+  online: '#4CAF50',
 };
 
-type TripStatus = 'none' | 'assigned' | 'accepted' | 'ongoing' | 'completed';
-
-interface CurrentTrip {
-  booking_id: string;
-  pickup: { address: string; latitude: number; longitude: number };
-  drop: { address: string; latitude: number; longitude: number };
-  fare: number;
-  driver_earning: number;
-  distance: number;
-  status: string;
-  customer_name?: string;
-  customer_phone?: string;
-}
-
-export default function DriverDashboardScreen() {
+export default function DriverDashboard() {
   const router = useRouter();
   const { user, logout, setUser } = useAuthStore();
   
-  const [driverData, setDriverData] = useState<any>(null);
-  const [approvalStatus, setApprovalStatus] = useState(user?.approval_status || 'pending');
-  const [dutyOn, setDutyOn] = useState(false);
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [loading, setLoading] = useState(false);
+  // State
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [queueStatus, setQueueStatus] = useState<any>(null);
-  const [currentTrip, setCurrentTrip] = useState<CurrentTrip | null>(null);
-  const [tripStatus, setTripStatus] = useState<TripStatus>('none');
-  const [incomingRequest, setIncomingRequest] = useState<CurrentTrip | null>(null);
-  const [totalEarnings, setTotalEarnings] = useState(0);
-  const [completedTrips, setCompletedTrips] = useState(0);
+  const [driverData, setDriverData] = useState<any>(null);
+  const [isOnline, setIsOnline] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [todayEarnings, setTodayEarnings] = useState(0);
+  const [availableRides, setAvailableRides] = useState<any[]>([]);
+  const [ongoingTrip, setOngoingTrip] = useState<any>(null);
+  const [completedTrips, setCompletedTrips] = useState<any[]>([]);
+  const [toggleLoading, setToggleLoading] = useState(false);
 
   const driverId = user?.driver_id || '';
+  const approvalStatus = user?.approval_status || driverData?.approval_status || 'pending';
 
-  useEffect(() => {
-    if (driverId) {
-      fetchDriverData();
+  // Fetch all driver data
+  const fetchDriverData = useCallback(async () => {
+    if (!driverId) return;
+    
+    try {
+      console.log('[Driver] Fetching data for:', driverId);
+      
+      // Get driver profile
+      const profileRes = await getDriverProfileComplete(driverId);
+      const driver = profileRes.data.driver;
+      console.log('[Driver] Profile loaded:', driver?.full_name);
+      setDriverData(driver);
+      setIsOnline(driver?.duty_on || driver?.is_online || false);
+      
+      // Update auth store
+      setUser({
+        ...user,
+        ...driver,
+        approval_status: driver.approval_status,
+      });
+
+      // Get wallet balance
+      try {
+        const walletRes = await getWallet(driverId);
+        setWalletBalance(walletRes.data.wallet?.balance || 0);
+      } catch (e) {
+        console.log('[Driver] Wallet fetch failed, using 0');
+        setWalletBalance(0);
+      }
+
+      // Get rides
+      try {
+        const ridesRes = await getDriverRides(driverId);
+        const rides = ridesRes.data.rides || [];
+        
+        // Filter rides by status
+        const available = rides.filter((r: any) => r.status === 'requested' || r.status === 'assigned');
+        const ongoing = rides.find((r: any) => r.status === 'accepted' || r.status === 'ongoing');
+        const completed = rides.filter((r: any) => r.status === 'completed');
+        
+        setAvailableRides(available);
+        setOngoingTrip(ongoing || null);
+        setCompletedTrips(completed);
+        
+        // Calculate today's earnings
+        const today = new Date().toDateString();
+        const todayCompleted = completed.filter((r: any) => {
+          const rideDate = new Date(r.completed_at || r.created_at).toDateString();
+          return rideDate === today;
+        });
+        const earnings = todayCompleted.reduce((sum: number, r: any) => sum + (r.driver_earning || 0), 0);
+        setTodayEarnings(earnings);
+      } catch (e) {
+        console.log('[Driver] Rides fetch failed');
+        setAvailableRides([]);
+        setOngoingTrip(null);
+        setCompletedTrips([]);
+        setTodayEarnings(0);
+      }
+
+    } catch (error) {
+      console.error('[Driver] Failed to fetch data:', error);
+    } finally {
+      setLoading(false);
     }
   }, [driverId]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (dutyOn && walletBalance >= 1000 && driverId) {
-      interval = setInterval(() => {
-        pollForUpdates();
-      }, 5000);
-    }
-    return () => { if (interval) clearInterval(interval); };
-  }, [dutyOn, walletBalance, driverId, tripStatus]);
+    fetchDriverData();
+  }, [fetchDriverData]);
 
-  const pollForUpdates = async () => {
-    try {
-      const ridesRes = await getDriverRides(driverId);
-      const rides = ridesRes.data.rides || [];
-      
-      const requestedTrip = rides.find((r: any) => r.status === 'requested');
-      const acceptedTrip = rides.find((r: any) => r.status === 'accepted');
-      const ongoingTrip = rides.find((r: any) => r.status === 'ongoing');
-
-      if (ongoingTrip) {
-        setCurrentTrip(ongoingTrip);
-        setTripStatus('ongoing');
-        setIncomingRequest(null);
-      } else if (acceptedTrip) {
-        setCurrentTrip(acceptedTrip);
-        setTripStatus('accepted');
-        setIncomingRequest(null);
-      } else if (requestedTrip) {
-        setIncomingRequest(requestedTrip);
-        setTripStatus('assigned');
-        setCurrentTrip(null);
-      } else {
-        setTripStatus('none');
-        setIncomingRequest(null);
-        setCurrentTrip(null);
-      }
-
-      const walletRes = await getWallet(driverId);
-      setWalletBalance(walletRes.data.wallet?.balance || 0);
-
-      const queueRes = await getQueueStatus(driverId);
-      setQueueStatus(queueRes.data);
-    } catch (error) {
-      console.error('Poll error:', error);
-    }
-  };
-
-  const fetchDriverData = async () => {
-    try {
-      const profileRes = await getDriverProfileComplete(driverId);
-      const driver = profileRes.data.driver;
-      setDriverData(driver);
-      setApprovalStatus(driver.approval_status);
-      setDutyOn(driver.duty_on || false);
-      setTotalEarnings(driver.earnings || 0);
-      setCompletedTrips(driver.completed_trips || 0);
-      setUser(driver);
-
-      const walletRes = await getWallet(driverId);
-      setWalletBalance(walletRes.data.wallet?.balance || 0);
-
-      const queueRes = await getQueueStatus(driverId);
-      setQueueStatus(queueRes.data);
-
-      const ridesRes = await getDriverRides(driverId);
-      const rides = ridesRes.data.rides || [];
-      const ongoingTrip = rides.find((r: any) => r.status === 'ongoing');
-      const acceptedTrip = rides.find((r: any) => r.status === 'accepted');
-      const requestedTrip = rides.find((r: any) => r.status === 'requested');
-
-      if (ongoingTrip) {
-        setCurrentTrip(ongoingTrip);
-        setTripStatus('ongoing');
-      } else if (acceptedTrip) {
-        setCurrentTrip(acceptedTrip);
-        setTripStatus('accepted');
-      } else if (requestedTrip) {
-        setIncomingRequest(requestedTrip);
-        setTripStatus('assigned');
-      }
-    } catch (error) {
-      console.error('Failed to fetch driver data:', error);
-    }
-  };
-
+  // Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchDriverData();
-    await pollForUpdates();
     setRefreshing(false);
-  }, [driverId]);
+  }, [fetchDriverData]);
 
-  const handleDutyToggle = async (value: boolean) => {
-    if (walletBalance < 1000 && value) {
-      Alert.alert('Low Balance', 'Minimum Rs.1000 wallet balance required to go on duty.');
+  // Toggle Online/Offline
+  const handleToggleOnline = async () => {
+    if (walletBalance < 1000 && !isOnline) {
+      Alert.alert(
+        'Low Balance',
+        'Minimum ₹1000 wallet balance required to go online. Please contact admin to add balance.'
+      );
       return;
     }
 
-    setLoading(true);
+    setToggleLoading(true);
     try {
-      await updateDutyStatus(driverId, { duty_on: value, go_home_mode: false });
-      setDutyOn(value);
-      if (!value) {
-        setTripStatus('none');
-        setIncomingRequest(null);
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to update duty');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAcceptRide = async () => {
-    if (!incomingRequest) return;
-    setLoading(true);
-    try {
-      await acceptRejectBooking({
-        booking_id: incomingRequest.booking_id,
-        driver_id: driverId,
-        action: 'accept',
+      const newStatus = !isOnline;
+      console.log('[Driver] Toggling online status to:', newStatus);
+      
+      await updateDutyStatus(driverId, { 
+        duty_on: newStatus, 
+        is_online: newStatus,
+        go_home_mode: false 
       });
-      setCurrentTrip(incomingRequest);
-      setIncomingRequest(null);
-      setTripStatus('accepted');
-      Alert.alert('Success', 'Ride accepted! Navigate to pickup.');
+      
+      setIsOnline(newStatus);
+      Alert.alert(
+        newStatus ? 'You\'re Online!' : 'You\'re Offline',
+        newStatus ? 'You will now receive ride requests.' : 'You won\'t receive ride requests.'
+      );
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to accept');
+      console.error('[Driver] Toggle failed:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to update status');
     } finally {
-      setLoading(false);
+      setToggleLoading(false);
     }
   };
 
-  const handleRejectRide = async () => {
-    if (!incomingRequest) return;
-    setLoading(true);
-    try {
-      await acceptRejectBooking({
-        booking_id: incomingRequest.booking_id,
-        driver_id: driverId,
-        action: 'reject',
-      });
-      setIncomingRequest(null);
-      setTripStatus('none');
-    } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to reject');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStartTrip = async () => {
-    if (!currentTrip) return;
-    setLoading(true);
-    try {
-      await startTrip(currentTrip.booking_id);
-      setTripStatus('ongoing');
-      Alert.alert('Trip Started', 'Navigate to drop location.');
-    } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to start');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCompleteTrip = async () => {
-    if (!currentTrip) return;
-    Alert.alert('Complete Trip', `Earning: Rs.${currentTrip.driver_earning}`, [
+  // Logout handler
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Complete',
-        onPress: async () => {
-          setLoading(true);
-          try {
-            const res = await completeTrip(currentTrip.booking_id);
-            Alert.alert('Trip Completed!', `You earned Rs.${res.data.earning || currentTrip.driver_earning}`);
-            setCurrentTrip(null);
-            setTripStatus('none');
-            fetchDriverData();
-          } catch (error: any) {
-            Alert.alert('Error', error.response?.data?.detail || 'Failed');
-          } finally {
-            setLoading(false);
-          }
-        },
-      },
+      { text: 'Logout', style: 'destructive', onPress: () => logout() }
     ]);
   };
 
-  // Get driver display info
-  const driverName = driverData?.full_name || user?.full_name || user?.personal_details?.full_name || user?.name || 'Driver';
-  const vehicleType = (driverData?.vehicle_type || user?.vehicle_type || user?.vehicle_details?.vehicle_type || 'sedan').toUpperCase();
-  const vehicleNumber = driverData?.vehicle_number || user?.vehicle_number || user?.vehicle_details?.vehicle_number || '';
-  const vehicleModel = driverData?.vehicle_model || user?.vehicle_model || user?.vehicle_details?.vehicle_model || '';
+  // Get driver info
+  const driverName = driverData?.full_name || driverData?.personal_details?.full_name || user?.name || 'Driver';
+  const driverPhoto = driverData?.driver_photos?.driver_photo || driverData?.documents?.driver_photo || null;
 
-  // Pending Approval Screen
+  // Loading state
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  // PENDING APPROVAL SCREEN
   if (approvalStatus === 'pending') {
     return (
       <View style={styles.container}>
         <View style={styles.pendingContainer}>
           <View style={styles.pendingIcon}>
-            <Ionicons name="time" size={60} color={COLORS.warning} />
+            <Ionicons name="time-outline" size={80} color={COLORS.warning} />
           </View>
-          <Text style={styles.pendingTitle}>Approval Pending</Text>
+          <Text style={styles.pendingTitle}>Waiting for Admin Approval</Text>
           <Text style={styles.pendingMessage}>
             Your registration is under review.{'\n'}
-            Admin will verify your documents and approve.
+            Admin will verify your documents and approve your account.
           </Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={fetchDriverData}>
+          <Text style={styles.pendingDriverId}>Driver ID: {driverId}</Text>
+          
+          <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh}>
             <Ionicons name="refresh" size={20} color={COLORS.secondary} />
-            <Text style={styles.refreshButtonText}>Refresh Status</Text>
+            <Text style={styles.refreshBtnText}>Check Status</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutButtonSecondary} onPress={logout}>
-            <Text style={styles.logoutButtonText}>Logout</Text>
+          
+          <TouchableOpacity style={styles.logoutBtnSecondary} onPress={handleLogout}>
+            <Text style={styles.logoutBtnText}>Logout</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  // Rejected Screen
+  // REJECTED SCREEN
   if (approvalStatus === 'rejected') {
     return (
       <View style={styles.container}>
         <View style={styles.pendingContainer}>
           <View style={[styles.pendingIcon, { backgroundColor: 'rgba(220, 53, 69, 0.1)' }]}>
-            <Ionicons name="close-circle" size={60} color={COLORS.error} />
+            <Ionicons name="close-circle-outline" size={80} color={COLORS.error} />
           </View>
           <Text style={[styles.pendingTitle, { color: COLORS.error }]}>Application Rejected</Text>
           <Text style={styles.pendingMessage}>
-            Your application was not approved.{'\n'}
+            Unfortunately, your application was not approved.{'\n'}
             Please contact support for more information.
           </Text>
-          <TouchableOpacity style={styles.logoutButtonSecondary} onPress={logout}>
-            <Text style={styles.logoutButtonText}>Logout</Text>
+          
+          <TouchableOpacity style={styles.logoutBtnSecondary} onPress={handleLogout}>
+            <Text style={styles.logoutBtnText}>Logout</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  // APPROVED - DRIVER HOME SCREEN
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.greeting}>Hello, {driverName}!</Text>
-          <Text style={styles.driverId}>{driverId}</Text>
+        <View style={styles.profileSection}>
+          {driverPhoto ? (
+            <Image source={{ uri: driverPhoto }} style={styles.profilePhoto} />
+          ) : (
+            <View style={styles.profilePhotoPlaceholder}>
+              <Ionicons name="person" size={32} color={COLORS.textLight} />
+            </View>
+          )}
+          <View style={styles.profileInfo}>
+            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <Text style={styles.driverName}>{driverName}</Text>
+          </View>
         </View>
-        <TouchableOpacity onPress={logout} style={styles.logoutIcon}>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutIcon}>
           <Ionicons name="log-out-outline" size={24} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 
       <ScrollView
         style={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.secondary} />}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.secondary]} />
+        }
       >
-        {/* Vehicle Info Card */}
-        <View style={styles.vehicleCard}>
-          <View style={styles.vehicleIconContainer}>
-            <Ionicons name="car-sport" size={32} color={COLORS.secondary} />
+        {/* Online/Offline Status Card */}
+        <View style={[styles.statusCard, isOnline && styles.statusCardOnline]}>
+          <View style={styles.statusInfo}>
+            <View style={[styles.statusDot, isOnline && styles.statusDotOnline]} />
+            <View>
+              <Text style={styles.statusTitle}>
+                {isOnline ? "You're Online" : "You're Offline"}
+              </Text>
+              <Text style={styles.statusSubtitle}>
+                {isOnline ? 'Accepting ride requests' : 'Go online to receive rides'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.vehicleInfo}>
-            <Text style={styles.vehicleNumber}>{vehicleNumber}</Text>
-            <Text style={styles.vehicleDetails}>{vehicleType} - {vehicleModel}</Text>
-          </View>
+          
+          <TouchableOpacity
+            style={[styles.toggleBtn, isOnline && styles.toggleBtnOffline]}
+            onPress={handleToggleOnline}
+            disabled={toggleLoading}
+          >
+            {toggleLoading ? (
+              <ActivityIndicator size="small" color={isOnline ? COLORS.error : COLORS.background} />
+            ) : (
+              <Text style={[styles.toggleBtnText, isOnline && styles.toggleBtnTextOffline]}>
+                {isOnline ? 'Go Offline' : 'Go Online'}
+              </Text>
+            )}
+          </TouchableOpacity>
         </View>
 
-        {/* Wallet Warning */}
+        {/* Wallet Balance Warning */}
         {walletBalance < 1000 && (
           <View style={styles.warningCard}>
-            <Ionicons name="warning" size={24} color={COLORS.error} />
-            <View style={styles.warningText}>
-              <Text style={styles.warningTitle}>Low Wallet Balance</Text>
-              <Text style={styles.warningSubtitle}>Rs.{walletBalance} (Min Rs.1000 required to go on duty)</Text>
-            </View>
+            <Ionicons name="warning" size={20} color={COLORS.error} />
+            <Text style={styles.warningText}>
+              Low balance! Min ₹1000 required to go online. Current: ₹{walletBalance}
+            </Text>
           </View>
         )}
 
-        {/* Duty Switch Card */}
-        <View style={[styles.dutyCard, dutyOn && styles.dutyCardActive]}>
-          <View style={styles.dutyContent}>
-            <View style={styles.dutyInfo}>
-              <View style={[styles.dutyIndicator, dutyOn && styles.dutyIndicatorOn]} />
-              <View style={styles.dutyTextContainer}>
-                <Text style={styles.dutyTitle}>{dutyOn ? 'Duty ON' : 'Duty OFF'}</Text>
-                <Text style={styles.dutySubtitle}>{dutyOn ? 'Accepting rides' : 'Toggle to start accepting'}</Text>
-              </View>
-            </View>
-            <Switch
-              value={dutyOn}
-              onValueChange={handleDutyToggle}
-              trackColor={{ false: COLORS.border, true: COLORS.success }}
-              thumbColor={COLORS.background}
-              disabled={loading || walletBalance < 1000}
-            />
-          </View>
-        </View>
-
-        {/* Stats Row */}
+        {/* Wallet & Earnings */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Ionicons name="wallet" size={28} color={COLORS.primary} />
-            <Text style={styles.statValue}>Rs.{walletBalance.toFixed(0)}</Text>
-            <Text style={styles.statLabel}>Wallet</Text>
+            <Ionicons name="wallet-outline" size={28} color={COLORS.primary} />
+            <Text style={styles.statValue}>₹{walletBalance.toFixed(0)}</Text>
+            <Text style={styles.statLabel}>Wallet Balance</Text>
           </View>
-
+          
           <View style={styles.statCard}>
-            <Ionicons name="cash" size={28} color={COLORS.secondary} />
-            <Text style={styles.statValue}>Rs.{totalEarnings.toFixed(0)}</Text>
-            <Text style={styles.statLabel}>Earnings</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <Ionicons name="car" size={28} color={COLORS.success} />
-            <Text style={styles.statValue}>{completedTrips}</Text>
-            <Text style={styles.statLabel}>Trips</Text>
+            <Ionicons name="cash-outline" size={28} color={COLORS.success} />
+            <Text style={styles.statValue}>₹{todayEarnings.toFixed(0)}</Text>
+            <Text style={styles.statLabel}>Today's Earnings</Text>
           </View>
         </View>
 
-        {/* Queue Status */}
-        {queueStatus && dutyOn && (
-          <View style={styles.queueCard}>
-            <Text style={styles.queueTitle}>Queue Status</Text>
-            <View style={styles.queueRow}>
-              <View style={styles.queueItem}>
-                <Text style={styles.queueValue}>{queueStatus.continuous_trips_count || 0}</Text>
-                <Text style={styles.queueLabel}>Continuous</Text>
+        {/* Available Rides Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Available Rides</Text>
+          {availableRides.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="car-outline" size={40} color={COLORS.border} />
+              <Text style={styles.emptyText}>No available rides</Text>
+              <Text style={styles.emptySubtext}>
+                {isOnline ? 'Waiting for ride requests...' : 'Go online to receive rides'}
+              </Text>
+            </View>
+          ) : (
+            availableRides.map((ride, index) => (
+              <View key={ride.booking_id || index} style={styles.rideCard}>
+                <View style={styles.rideHeader}>
+                  <Text style={styles.rideId}>#{ride.booking_id?.slice(0, 10)}</Text>
+                  <Text style={styles.rideFare}>₹{ride.fare || 0}</Text>
+                </View>
+                <View style={styles.rideLocation}>
+                  <View style={styles.locationDot} />
+                  <Text style={styles.locationText} numberOfLines={1}>{ride.pickup?.address || 'N/A'}</Text>
+                </View>
+                <View style={styles.rideLocation}>
+                  <View style={[styles.locationDot, { backgroundColor: COLORS.success }]} />
+                  <Text style={styles.locationText} numberOfLines={1}>{ride.drop?.address || 'N/A'}</Text>
+                </View>
               </View>
-              <View style={styles.queueDivider} />
-              <View style={styles.queueItem}>
-                <Text style={styles.queueValue}>{queueStatus.in_queue ? `#${queueStatus.queue_position || '-'}` : '-'}</Text>
-                <Text style={styles.queueLabel}>Position</Text>
+            ))
+          )}
+        </View>
+
+        {/* Ongoing Trip Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Ongoing Trip</Text>
+          {!ongoingTrip ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="navigate-outline" size={40} color={COLORS.border} />
+              <Text style={styles.emptyText}>No ongoing trip</Text>
+              <Text style={styles.emptySubtext}>Your active trip will appear here</Text>
+            </View>
+          ) : (
+            <View style={[styles.rideCard, styles.ongoingCard]}>
+              <View style={styles.rideHeader}>
+                <View style={styles.ongoingBadge}>
+                  <Text style={styles.ongoingBadgeText}>IN PROGRESS</Text>
+                </View>
+                <Text style={styles.rideFare}>₹{ongoingTrip.fare || 0}</Text>
               </View>
-              <View style={styles.queueDivider} />
-              <View style={styles.queueItem}>
-                <Text style={styles.queueValue}>{queueStatus.total_in_queue || 0}</Text>
-                <Text style={styles.queueLabel}>In Queue</Text>
+              <View style={styles.rideLocation}>
+                <View style={styles.locationDot} />
+                <Text style={styles.locationText} numberOfLines={1}>{ongoingTrip.pickup?.address || 'N/A'}</Text>
               </View>
-            </View>
-          </View>
-        )}
-
-        {/* Incoming Request Card */}
-        {incomingRequest && tripStatus === 'assigned' && (
-          <View style={styles.requestCard}>
-            <View style={styles.requestHeader}>
-              <View style={styles.newRideBadge}>
-                <Ionicons name="car" size={16} color={COLORS.background} />
-                <Text style={styles.newRideText}>NEW RIDE</Text>
-              </View>
-              <Text style={styles.requestFare}>Rs.{incomingRequest.fare}</Text>
-            </View>
-
-            <View style={styles.locationRow}>
-              <View style={[styles.locationDot, { backgroundColor: COLORS.primary }]} />
-              <Text style={styles.locationText} numberOfLines={2}>{incomingRequest.pickup.address}</Text>
-            </View>
-
-            <View style={styles.locationLine} />
-
-            <View style={styles.locationRow}>
-              <View style={[styles.locationDot, { backgroundColor: COLORS.success }]} />
-              <Text style={styles.locationText} numberOfLines={2}>{incomingRequest.drop.address}</Text>
-            </View>
-
-            <View style={styles.requestInfoRow}>
-              <Text style={styles.infoText}>{incomingRequest.distance} km</Text>
-              <Text style={styles.infoText}>Earn: Rs.{incomingRequest.driver_earning}</Text>
-            </View>
-
-            <View style={styles.requestActions}>
-              <TouchableOpacity style={styles.acceptBtn} onPress={handleAcceptRide} disabled={loading}>
-                {loading ? <ActivityIndicator color={COLORS.background} /> : (
-                  <>
-                    <Ionicons name="checkmark" size={24} color={COLORS.background} />
-                    <Text style={styles.acceptBtnText}>ACCEPT</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.rejectBtn} onPress={handleRejectRide} disabled={loading}>
-                <Ionicons name="close" size={24} color={COLORS.error} />
-                <Text style={styles.rejectBtnText}>REJECT</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Current Trip Card */}
-        {currentTrip && (tripStatus === 'accepted' || tripStatus === 'ongoing') && (
-          <View style={styles.tripCard}>
-            <View style={styles.tripHeader}>
-              <Text style={styles.tripTitle}>{tripStatus === 'accepted' ? 'Go to Pickup' : 'Trip Ongoing'}</Text>
-              <View style={[styles.tripBadge, tripStatus === 'ongoing' && styles.tripBadgeOngoing]}>
-                <Text style={styles.tripBadgeText}>{tripStatus === 'accepted' ? 'PICKUP' : 'IN PROGRESS'}</Text>
+              <View style={styles.rideLocation}>
+                <View style={[styles.locationDot, { backgroundColor: COLORS.success }]} />
+                <Text style={styles.locationText} numberOfLines={1}>{ongoingTrip.drop?.address || 'N/A'}</Text>
               </View>
             </View>
+          )}
+        </View>
 
-            <View style={styles.locationRow}>
-              <View style={[styles.locationDot, { backgroundColor: COLORS.primary }]} />
-              <Text style={styles.locationText} numberOfLines={2}>{currentTrip.pickup.address}</Text>
+        {/* Completed Trips Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Completed Trips ({completedTrips.length})</Text>
+          {completedTrips.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="checkmark-circle-outline" size={40} color={COLORS.border} />
+              <Text style={styles.emptyText}>No completed trips</Text>
+              <Text style={styles.emptySubtext}>Your completed trips will appear here</Text>
             </View>
-
-            <View style={styles.locationLine} />
-
-            <View style={styles.locationRow}>
-              <View style={[styles.locationDot, { backgroundColor: COLORS.success }]} />
-              <Text style={styles.locationText} numberOfLines={2}>{currentTrip.drop.address}</Text>
-            </View>
-
-            <View style={styles.tripStats}>
-              <View style={styles.tripStatItem}>
-                <Text style={styles.tripStatLabel}>Distance</Text>
-                <Text style={styles.tripStatValue}>{currentTrip.distance} km</Text>
+          ) : (
+            completedTrips.slice(0, 3).map((ride, index) => (
+              <View key={ride.booking_id || index} style={styles.completedCard}>
+                <View style={styles.completedInfo}>
+                  <Text style={styles.completedId}>#{ride.booking_id?.slice(0, 10)}</Text>
+                  <Text style={styles.completedLocation} numberOfLines={1}>
+                    {ride.pickup?.address?.slice(0, 20)}... → {ride.drop?.address?.slice(0, 20)}...
+                  </Text>
+                </View>
+                <Text style={styles.completedEarning}>+₹{ride.driver_earning || 0}</Text>
               </View>
-              <View style={styles.tripStatItem}>
-                <Text style={styles.tripStatLabel}>Fare</Text>
-                <Text style={styles.tripStatValue}>Rs.{currentTrip.fare}</Text>
-              </View>
-              <View style={styles.tripStatItem}>
-                <Text style={styles.tripStatLabel}>Earning</Text>
-                <Text style={[styles.tripStatValue, { color: COLORS.success }]}>Rs.{currentTrip.driver_earning}</Text>
-              </View>
-            </View>
-
-            {tripStatus === 'accepted' && (
-              <TouchableOpacity style={styles.primaryButton} onPress={handleStartTrip} disabled={loading}>
-                {loading ? <ActivityIndicator color={COLORS.background} /> : (
-                  <Text style={styles.primaryButtonText}>START TRIP</Text>
-                )}
-              </TouchableOpacity>
-            )}
-            {tripStatus === 'ongoing' && (
-              <TouchableOpacity style={[styles.primaryButton, { backgroundColor: COLORS.success }]} onPress={handleCompleteTrip} disabled={loading}>
-                {loading ? <ActivityIndicator color={COLORS.background} /> : (
-                  <Text style={styles.primaryButtonText}>COMPLETE TRIP</Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        {/* Waiting for Rides */}
-        {dutyOn && tripStatus === 'none' && walletBalance >= 1000 && (
-          <View style={styles.waitingCard}>
-            <Ionicons name="car-outline" size={48} color={COLORS.border} />
-            <Text style={styles.waitingText}>Waiting for ride requests...</Text>
-            <Text style={styles.waitingSubtext}>Pull down to refresh</Text>
-          </View>
-        )}
+            ))
+          )}
+        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -538,7 +416,21 @@ export default function DriverDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: COLORS.textLight,
+  },
   // Header
   header: {
     flexDirection: 'row',
@@ -549,89 +441,137 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: COLORS.primary,
   },
-  headerLeft: { flex: 1 },
-  greeting: { fontSize: 22, fontWeight: 'bold', color: COLORS.text },
-  driverId: { fontSize: 12, color: COLORS.textLight, marginTop: 4 },
+  profileSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profilePhoto: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: COLORS.background,
+  },
+  profilePhotoPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.background,
+  },
+  profileInfo: {
+    marginLeft: 12,
+  },
+  welcomeText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+  driverName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
   logoutIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.5)',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   // Content
-  content: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
-  // Vehicle Card
-  vehicleCard: {
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  // Status Card
+  statusCard: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: COLORS.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderWidth: 2,
+    borderColor: COLORS.offline,
   },
-  vehicleIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(46, 125, 50, 0.1)',
+  statusCardOnline: {
+    borderColor: COLORS.online,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+  },
+  statusInfo: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
   },
-  vehicleInfo: { flex: 1 },
-  vehicleNumber: { fontSize: 20, fontWeight: 'bold', color: COLORS.text },
-  vehicleDetails: { fontSize: 14, color: COLORS.textLight, marginTop: 4 },
+  statusDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: COLORS.offline,
+    marginRight: 12,
+  },
+  statusDotOnline: {
+    backgroundColor: COLORS.online,
+  },
+  statusTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  statusSubtitle: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 2,
+  },
+  toggleBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  toggleBtnOffline: {
+    backgroundColor: COLORS.card,
+    borderWidth: 2,
+    borderColor: COLORS.error,
+  },
+  toggleBtnText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.background,
+  },
+  toggleBtnTextOffline: {
+    color: COLORS.error,
+  },
   // Warning Card
   warningCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFEBEE',
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     marginBottom: 16,
+    gap: 10,
     borderWidth: 1,
     borderColor: COLORS.error,
-    gap: 12,
   },
-  warningText: { flex: 1 },
-  warningTitle: { fontSize: 14, fontWeight: 'bold', color: COLORS.error },
-  warningSubtitle: { fontSize: 12, color: COLORS.error, marginTop: 2 },
-  // Duty Card
-  dutyCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  warningText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.error,
   },
-  dutyCardActive: {
-    backgroundColor: 'rgba(40, 167, 69, 0.1)',
-    borderColor: COLORS.success,
-  },
-  dutyContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  dutyInfo: { flexDirection: 'row', alignItems: 'center' },
-  dutyIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: COLORS.border,
-    marginRight: 12,
-  },
-  dutyIndicatorOn: { backgroundColor: COLORS.success },
-  dutyTextContainer: {},
-  dutyTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.text },
-  dutySubtitle: { fontSize: 13, color: COLORS.textLight, marginTop: 2 },
   // Stats Row
-  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
   statCard: {
     flex: 1,
     backgroundColor: COLORS.card,
@@ -641,149 +581,173 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  statValue: { fontSize: 18, fontWeight: 'bold', color: COLORS.text, marginTop: 8 },
-  statLabel: { fontSize: 11, color: COLORS.textLight, marginTop: 4 },
-  // Queue Card
-  queueCard: {
+  statValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 4,
+  },
+  // Section
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 12,
+  },
+  // Empty Card
+  emptyCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  emptyText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textLight,
+    marginTop: 12,
+  },
+  emptySubtext: {
+    fontSize: 12,
+    color: COLORS.border,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  // Ride Card
+  rideCard: {
     backgroundColor: COLORS.card,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  queueTitle: { fontSize: 14, fontWeight: 'bold', color: COLORS.textLight, marginBottom: 12 },
-  queueRow: { flexDirection: 'row', justifyContent: 'space-around' },
-  queueItem: { alignItems: 'center' },
-  queueValue: { fontSize: 20, fontWeight: 'bold', color: COLORS.secondary },
-  queueLabel: { fontSize: 11, color: COLORS.textLight, marginTop: 4 },
-  queueDivider: { width: 1, backgroundColor: COLORS.border },
-  // Request Card
-  requestCard: {
-    backgroundColor: 'rgba(46, 125, 50, 0.05)',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: COLORS.secondary,
-  },
-  requestHeader: {
+  rideHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  newRideBadge: {
+  rideId: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontWeight: '600',
+  },
+  rideFare: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+  },
+  rideLocation: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 4,
+    marginBottom: 8,
   },
-  newRideText: { fontSize: 12, fontWeight: 'bold', color: COLORS.background },
-  requestFare: { fontSize: 28, fontWeight: 'bold', color: COLORS.secondary },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 4 },
-  locationDot: { width: 12, height: 12, borderRadius: 6 },
-  locationText: { flex: 1, fontSize: 14, color: COLORS.text },
-  locationLine: { width: 2, height: 20, backgroundColor: COLORS.border, marginLeft: 5, marginVertical: 2 },
-  requestInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  infoText: { fontSize: 13, color: COLORS.textLight },
-  requestActions: { flexDirection: 'row', gap: 12, marginTop: 16 },
-  acceptBtn: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.secondary,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  acceptBtnText: { fontSize: 16, fontWeight: 'bold', color: COLORS.background },
-  rejectBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: COLORS.error,
-    paddingVertical: 12,
-    gap: 4,
-  },
-  rejectBtnText: { fontSize: 14, fontWeight: 'bold', color: COLORS.error },
-  // Trip Card
-  tripCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-  },
-  tripHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  tripTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.text },
-  tripBadge: {
-    backgroundColor: COLORS.warning,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  tripBadgeOngoing: { backgroundColor: COLORS.success },
-  tripBadgeText: { fontSize: 11, fontWeight: 'bold', color: COLORS.background },
-  tripStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginVertical: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: COLORS.border,
-  },
-  tripStatItem: { alignItems: 'center' },
-  tripStatLabel: { fontSize: 11, color: COLORS.textLight },
-  tripStatValue: { fontSize: 16, fontWeight: 'bold', color: COLORS.text, marginTop: 4 },
-  // Primary Button
-  primaryButton: {
+  locationDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginRight: 10,
   },
-  primaryButtonText: { fontSize: 16, fontWeight: 'bold', color: COLORS.text },
-  // Waiting Card
-  waitingCard: { alignItems: 'center', paddingVertical: 40 },
-  waitingText: { fontSize: 16, color: COLORS.textLight, marginTop: 16 },
-  waitingSubtext: { fontSize: 12, color: COLORS.border, marginTop: 4 },
-  // Pending Screen
-  pendingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  pendingIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  locationText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  // Ongoing Card
+  ongoingCard: {
+    borderColor: COLORS.warning,
     backgroundColor: 'rgba(255, 152, 0, 0.1)',
+  },
+  ongoingBadge: {
+    backgroundColor: COLORS.warning,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  ongoingBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: COLORS.background,
+  },
+  // Completed Card
+  completedCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  completedInfo: {
+    flex: 1,
+  },
+  completedId: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontWeight: '600',
+  },
+  completedLocation: {
+    fontSize: 12,
+    color: COLORS.text,
+    marginTop: 4,
+  },
+  completedEarning: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.success,
+  },
+  // Pending Screen
+  pendingContainer: {
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  pendingIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 24,
   },
-  pendingTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.warning, marginBottom: 12 },
-  pendingMessage: { fontSize: 14, color: COLORS.textLight, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
-  refreshButton: {
+  pendingTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.warning,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  pendingMessage: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  pendingDriverId: {
+    fontSize: 14,
+    color: COLORS.secondary,
+    fontWeight: '600',
+    marginBottom: 32,
+  },
+  refreshBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.card,
@@ -795,10 +759,17 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
   },
-  refreshButtonText: { fontSize: 16, fontWeight: '600', color: COLORS.secondary },
-  logoutButtonSecondary: {
+  refreshBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.secondary,
+  },
+  logoutBtnSecondary: {
     paddingVertical: 12,
     paddingHorizontal: 24,
   },
-  logoutButtonText: { fontSize: 14, color: COLORS.textLight },
+  logoutBtnText: {
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
 });
