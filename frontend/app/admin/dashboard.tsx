@@ -409,42 +409,54 @@ export default function AdminDashboard() {
 
   const renderBookings = () => (
     <ScrollView style={styles.listContainer}>
-      {bookings.map((booking) => (
-        <View key={booking.booking_id} style={styles.listItem}>
-          <View style={styles.listItemHeader}>
-            <Text style={styles.listItemTitle}>#{booking.booking_id.slice(0, 8)}</Text>
-            <View
-              style={[
-                styles.statusBadge,
-                {
-                  backgroundColor:
-                    booking.status === 'completed'
-                      ? Colors.success
-                      : booking.status === 'cancelled'
-                      ? Colors.error
-                      : booking.status === 'ongoing'
-                      ? Colors.warning
-                      : Colors.primary,
-                },
-              ]}
-            >
-              <Text style={styles.statusText}>{booking.status?.toUpperCase()}</Text>
+      {loading && bookings.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>Loading bookings...</Text>
+        </View>
+      ) : bookings.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="receipt-outline" size={48} color={Colors.gray} />
+          <Text style={styles.emptyText}>No bookings yet</Text>
+          <Text style={styles.emptySubtext}>Bookings will appear here when customers make reservations</Text>
+        </View>
+      ) : (
+        bookings.map((booking) => (
+          <View key={booking.booking_id || booking._id} style={styles.listItem}>
+            <View style={styles.listItemHeader}>
+              <Text style={styles.listItemTitle}>#{(booking.booking_id || booking._id || '').slice(0, 12)}</Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  {
+                    backgroundColor:
+                      booking.status === 'completed'
+                        ? Colors.success
+                        : booking.status === 'cancelled'
+                        ? Colors.error
+                        : booking.status === 'ongoing'
+                        ? Colors.warning
+                        : Colors.primary,
+                  },
+                ]}
+              >
+                <Text style={styles.statusText}>{(booking.status || 'pending').toUpperCase()}</Text>
+              </View>
+            </View>
+            <Text style={styles.listItemSubtitle} numberOfLines={1}>
+              From: {booking.pickup?.address || 'N/A'}
+            </Text>
+            <Text style={styles.listItemSubtitle} numberOfLines={1}>
+              To: {booking.drop?.address || 'N/A'}
+            </Text>
+            <View style={styles.bookingFooter}>
+              <Text style={styles.listItemDetails}>
+                {booking.distance || 0} km • {(booking.vehicle_type || 'sedan').toUpperCase()}
+              </Text>
+              <Text style={styles.fareText}>₹{booking.fare || 0}</Text>
             </View>
           </View>
-          <Text style={styles.listItemSubtitle} numberOfLines={1}>
-            From: {booking.pickup?.address}
-          </Text>
-          <Text style={styles.listItemSubtitle} numberOfLines={1}>
-            To: {booking.drop?.address}
-          </Text>
-          <View style={styles.bookingFooter}>
-            <Text style={styles.listItemDetails}>
-              {booking.distance} km • {booking.vehicle_type}
-            </Text>
-            <Text style={styles.fareText}>₹{booking.fare}</Text>
-          </View>
-        </View>
-      ))}
+        ))
+      )}
     </ScrollView>
   );
 
@@ -1460,5 +1472,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  emptySubtext: {
+    fontSize: 12,
+    color: Colors.gray,
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 20,
   },
 });
