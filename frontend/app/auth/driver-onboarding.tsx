@@ -274,6 +274,8 @@ export default function DriverOnboardingForm() {
     }
 
     setLoading(true);
+    console.log('[Submit] Starting driver registration submission...');
+    
     try {
       const data = {
         basic_details: {
@@ -320,7 +322,9 @@ export default function DriverOnboardingForm() {
         } : null,
       };
 
+      console.log('[Submit] Calling onboardDriver API...');
       const response = await onboardDriver(data);
+      console.log('[Submit] API Response:', response.data);
       
       if (response.data.success) {
         setDriverId(response.data.driver_id);
@@ -333,11 +337,41 @@ export default function DriverOnboardingForm() {
           role: 'driver',
           approval_status: 'pending',
         });
-        console.log('Driver registered with ID:', response.data.driver_id);
+        console.log('[Submit] SUCCESS - Driver registered with ID:', response.data.driver_id);
+        Alert.alert('Success!', `Your application has been submitted!\nDriver ID: ${response.data.driver_id}`);
+      } else {
+        console.error('[Submit] API returned success=false');
+        Alert.alert('Submission Failed', 'Please try again. If the problem persists, contact support.');
       }
     } catch (error: any) {
-      console.error('Onboarding error:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Registration failed');
+      console.error('[Submit] ERROR:', error);
+      
+      // Handle different error types
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        Alert.alert(
+          'Connection Timeout',
+          'The server is taking too long to respond. Please check your internet connection and try again.',
+          [{ text: 'Retry', onPress: handleSubmit }, { text: 'Cancel', style: 'cancel' }]
+        );
+      } else if (error.code === 'ERR_NETWORK' || !error.response) {
+        Alert.alert(
+          'Connection Error',
+          'Unable to connect to server. Please check your internet connection and try again.\n\nIf you see a "Wake up servers" page, please click it and wait for servers to start, then try again.',
+          [{ text: 'OK' }]
+        );
+      } else if (error.response?.status === 500) {
+        Alert.alert(
+          'Server Error',
+          'The server encountered an error. Please try again in a moment.',
+          [{ text: 'Retry', onPress: handleSubmit }, { text: 'Cancel', style: 'cancel' }]
+        );
+      } else {
+        Alert.alert(
+          'Registration Failed',
+          error.response?.data?.detail || 'An unexpected error occurred. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
     } finally {
       setLoading(false);
     }

@@ -23,6 +23,26 @@ db = client[os.environ['DB_NAME']]
 app = FastAPI(title="VK Drop Taxi - Complete System")
 api_router = APIRouter(prefix="/api")
 
+# ==================== HEALTH CHECK ====================
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint to verify server is running"""
+    try:
+        # Check MongoDB connection
+        await db.command('ping')
+        return {
+            "status": "healthy",
+            "message": "VK Drop Taxi API is running",
+            "database": "connected",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "message": str(e),
+            "database": "disconnected"
+        }
+
 # ==================== BRANDED ID GENERATOR ====================
 async def get_next_counter(counter_name: str, start_value: int = 1001) -> int:
     """Get next counter value for branded IDs"""
