@@ -1008,6 +1008,12 @@ async def approve_driver(approval: DriverApproval):
         "driver_id": approval.driver_id
     }
 
+# Alias endpoint for backward compatibility (old path used by production)
+@api_router.put("/admin/approve-driver")
+async def approve_driver_alias(approval: DriverApproval):
+    """Alias for approve_driver - backward compatibility"""
+    return await approve_driver(approval)
+
 @api_router.put("/admin/driver/reset/{driver_id}")
 async def reset_driver_status(driver_id: str):
     """Reset driver status from APPROVED back to PENDING"""
