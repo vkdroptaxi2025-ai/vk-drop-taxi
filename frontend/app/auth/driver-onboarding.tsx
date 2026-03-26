@@ -137,83 +137,67 @@ export default function DriverOnboardingForm() {
   // Section 7: Payment
   const [paymentScreenshot, setPaymentScreenshot] = useState<string | null>(null);
 
-  // Image picker with multiple options
+  // SIMPLIFIED Image picker - directly opens gallery (works on ALL devices)
   const pickImage = useCallback(async (setter: (uri: string) => void, label: string) => {
-    // Show option to choose camera or gallery
-    Alert.alert(
-      'Upload ' + label,
-      'Choose an option',
-      [
-        {
-          text: 'Camera',
-          onPress: async () => {
-            try {
-              const { status } = await ImagePicker.requestCameraPermissionsAsync();
-              if (status !== 'granted') {
-                Alert.alert('Permission Required', 'Please allow camera access in your device settings');
-                return;
-              }
-              
-              const result = await ImagePicker.launchCameraAsync({
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality: 0.3, // Lower quality for smaller file size
-                base64: true,
-              });
-              
-              handleImageResult(result, setter, label);
-            } catch (error: any) {
-              console.error('Camera error:', error);
-              Alert.alert('Camera Error', error.message || 'Failed to open camera. Please try gallery option.');
-            }
-          },
-        },
-        {
-          text: 'Gallery',
-          onPress: async () => {
-            try {
-              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-              if (status !== 'granted') {
-                Alert.alert('Permission Required', 'Please allow photo library access in your device settings');
-                return;
-              }
-              
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: 'images',
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality: 0.3, // Lower quality for smaller file size
-                base64: true,
-              });
-              
-              handleImageResult(result, setter, label);
-            } catch (error: any) {
-              console.error('Gallery error:', error);
-              Alert.alert('Gallery Error', error.message || 'Failed to open gallery. Please try again.');
-            }
-          },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  }, []);
-
-  // Handle image result
-  const handleImageResult = useCallback((result: ImagePicker.ImagePickerResult, setter: (uri: string) => void, label: string) => {
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const asset = result.assets[0];
+    console.log(`[ImagePicker] Opening gallery for: ${label}`);
+    
+    try {
+      // Request permission first
+      console.log('[ImagePicker] Requesting permissions...');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      console.log('[ImagePicker] Permission status:', status);
       
-      if (asset.base64 && typeof asset.base64 === 'string' && asset.base64.length > 0) {
-        // Use base64 data
-        setter(`data:image/jpeg;base64,${asset.base64}`);
-        console.log(`${label} uploaded successfully (base64)`);
-      } else if (asset.uri && typeof asset.uri === 'string') {
-        // Fallback to URI - Note: This may not work for all upload scenarios
-        setter(asset.uri);
-        console.log(`${label} uploaded successfully (uri fallback)`);
-      } else {
-        Alert.alert('Upload Failed', 'Could not process the image. Please try a different image.');
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required', 
+          'Please allow photo library access to upload images. Go to Settings > Apps > VK Drop Taxi > Permissions'
+        );
+        return;
       }
+      
+      // Launch image library directly (no alert dialog)
+      console.log('[ImagePicker] Launching image library...');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.3,
+        base64: true,
+      });
+      
+      console.log('[ImagePicker] Result:', result.canceled ? 'Cancelled' : 'Image selected');
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        console.log('[ImagePicker] Asset uri:', asset.uri?.substring(0, 50) + '...');
+        console.log('[ImagePicker] Asset base64 length:', asset.base64?.length || 0);
+        
+        if (asset.base64 && typeof asset.base64 === 'string' && asset.base64.length > 0) {
+          const imageData = `data:image/jpeg;base64,${asset.base64}`;
+          setter(imageData);
+          console.log(`[ImagePicker] ${label} uploaded successfully (base64)`);
+          Alert.alert('Success', `${label} uploaded!`);
+        } else if (asset.uri && typeof asset.uri === 'string') {
+          // Use URI directly if it's already a data URL or valid URI
+          if (asset.uri.startsWith('data:')) {
+            setter(asset.uri);
+            console.log(`[ImagePicker] ${label} uploaded successfully (data URI)`);
+            Alert.alert('Success', `${label} uploaded!`);
+          } else {
+            setter(asset.uri);
+            console.log(`[ImagePicker] ${label} uploaded successfully (file URI)`);
+            Alert.alert('Success', `${label} uploaded!`);
+          }
+        } else {
+          console.error('[ImagePicker] No valid image data');
+          Alert.alert('Upload Failed', 'Could not process the image. Please try again.');
+        }
+      } else {
+        console.log('[ImagePicker] Image selection cancelled');
+      }
+    } catch (error: any) {
+      console.error('[ImagePicker] Error:', error);
+      Alert.alert('Error', error.message || 'Failed to open gallery. Please try again.');
     }
   }, []);
 

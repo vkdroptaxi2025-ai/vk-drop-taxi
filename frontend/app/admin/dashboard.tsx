@@ -123,18 +123,34 @@ export default function AdminDashboard() {
   };
 
   const handleApproveDriver = async (driverId: string, status: 'approved' | 'rejected', rejectionReason?: string) => {
-    console.log('Approving driver:', { driverId, status, rejectionReason });
-    try {
-      const response = await approveDriver(driverId, status, rejectionReason);
-      console.log('Approve response:', response.data);
-      Alert.alert('Success', `Driver ${status} successfully!`);
-      setSelectedDriver(null);
-      fetchDrivers();
-      fetchStats();
-    } catch (error: any) {
-      console.error('Approve error:', error.response?.data || error.message);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to update driver status');
-    }
+    console.log('[Admin] Approving driver:', { driverId, status, rejectionReason });
+    Alert.alert(
+      status === 'approved' ? 'Approve Driver' : 'Reject Driver',
+      status === 'approved' 
+        ? 'Are you sure you want to approve this driver?' 
+        : `Reject reason: ${rejectionReason || 'Not specified'}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: status === 'approved' ? 'Approve' : 'Reject',
+          style: status === 'rejected' ? 'destructive' : 'default',
+          onPress: async () => {
+            try {
+              console.log('[Admin] Calling approveDriver API...');
+              const response = await approveDriver(driverId, status, rejectionReason);
+              console.log('[Admin] Approve response:', response.data);
+              Alert.alert('Success', `Driver ${status} successfully!`);
+              setSelectedDriver(null);
+              fetchDrivers();
+              fetchStats();
+            } catch (error: any) {
+              console.error('[Admin] Approve error:', error.response?.data || error.message);
+              Alert.alert('Error', error.response?.data?.detail || 'Failed to update driver status');
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Add Wallet Balance Handler
@@ -852,7 +868,10 @@ export default function AdminDashboard() {
                     <View style={styles.actionButtons}>
                       <TouchableOpacity
                         style={[styles.actionBtn, styles.approveBtn]}
-                        onPress={() => handleApproveDriver(selectedDriver.driver_id, 'approved')}
+                        onPress={() => {
+                          console.log('[Admin] Approve button pressed for:', selectedDriver.driver_id);
+                          handleApproveDriver(selectedDriver.driver_id, 'approved');
+                        }}
                       >
                         <Ionicons name="checkmark-circle" size={24} color="#fff" />
                         <Text style={styles.actionBtnText}>APPROVE</Text>
@@ -860,18 +879,8 @@ export default function AdminDashboard() {
                       <TouchableOpacity
                         style={[styles.actionBtn, styles.rejectBtn]}
                         onPress={() => {
-                          Alert.alert(
-                            'Reject Driver',
-                            'Are you sure you want to reject this driver?',
-                            [
-                              { text: 'Cancel', style: 'cancel' },
-                              { 
-                                text: 'Reject', 
-                                style: 'destructive',
-                                onPress: () => handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Documents not verified')
-                              }
-                            ]
-                          );
+                          console.log('[Admin] Reject button pressed for:', selectedDriver.driver_id);
+                          handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Documents not verified');
                         }}
                       >
                         <Ionicons name="close-circle" size={24} color="#fff" />
@@ -881,7 +890,10 @@ export default function AdminDashboard() {
                     {/* Delete PENDING Driver */}
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
-                      onPress={() => handleDeleteDriver(selectedDriver.driver_id)}
+                      onPress={() => {
+                        console.log('[Admin] Delete PENDING button pressed for:', selectedDriver.driver_id);
+                        handleDeleteDriver(selectedDriver.driver_id);
+                      }}
                     >
                       <Ionicons name="trash" size={24} color="#fff" />
                       <Text style={styles.actionBtnText}>DELETE PENDING DRIVER</Text>
@@ -895,6 +907,7 @@ export default function AdminDashboard() {
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: Colors.secondary, marginTop: 16 }]}
                       onPress={() => {
+                        console.log('[Admin] Add Wallet button pressed for:', selectedDriver.driver_id);
                         setSelectedDriver(null);
                         openWalletModal(
                           selectedDriver.driver_id,
@@ -909,7 +922,10 @@ export default function AdminDashboard() {
                     {/* Reset Status Button */}
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: '#FF9800', marginTop: 12 }]}
-                      onPress={() => handleResetDriver(selectedDriver.driver_id)}
+                      onPress={() => {
+                        console.log('[Admin] Reset button pressed for:', selectedDriver.driver_id);
+                        handleResetDriver(selectedDriver.driver_id);
+                      }}
                     >
                       <Ionicons name="refresh" size={24} color="#fff" />
                       <Text style={styles.actionBtnText}>RESET TO PENDING</Text>
@@ -921,7 +937,10 @@ export default function AdminDashboard() {
                 {selectedDriver.approval_status === 'approved' && (
                   <TouchableOpacity
                     style={[styles.actionBtn, styles.rejectBtn, { marginTop: 12 }]}
-                    onPress={() => handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Approval revoked by admin')}
+                    onPress={() => {
+                      console.log('[Admin] Revoke approval button pressed for:', selectedDriver.driver_id);
+                      handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Approval revoked by admin');
+                    }}
                   >
                     <Ionicons name="close-circle" size={24} color="#fff" />
                     <Text style={styles.actionBtnText}>REVOKE APPROVAL</Text>
@@ -931,7 +950,10 @@ export default function AdminDashboard() {
                 {/* Delete Driver Button - Always visible */}
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
-                  onPress={() => handleDeleteDriver(selectedDriver.driver_id)}
+                  onPress={() => {
+                    console.log('[Admin] Delete button pressed for:', selectedDriver.driver_id);
+                    handleDeleteDriver(selectedDriver.driver_id);
+                  }}
                 >
                   <Ionicons name="trash" size={24} color="#fff" />
                   <Text style={styles.actionBtnText}>DELETE DRIVER</Text>
