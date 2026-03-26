@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { Colors } from '../../utils/colors';
-import { sendOTP, verifyOTP } from '../../utils/api';
+import { sendOTP, verifyOTP, getDriverStatusByPhone } from '../../utils/api';
 import { useAuthStore } from '../../store/authStore';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -64,31 +64,47 @@ export default function LoginScreen() {
     try {
       const response = await verifyOTP(phone, otp, role as string);
       if (response.data.success) {
-        if (response.data.new_user) {
-          // New user - redirect to registration
-          if (role === 'customer') {
+        if (role === 'customer') {
+          // Customer flow
+          if (response.data.new_user) {
             router.replace(`/auth/register-customer?phone=${phone}`);
           } else {
-            // MANDATORY: Driver must complete comprehensive onboarding
-            router.replace(`/auth/driver-onboarding?phone=${phone}`);
+            await setUser(response.data.user);
+            router.replace('/customer/home');
           }
         } else {
-          // Existing user
-          await setUser(response.data.user);
-          if (role === 'customer') {
-            router.replace('/customer/home');
-          } else {
-            // Check driver approval status
-            const approvalStatus = response.data.user.approval_status;
-            if (approvalStatus === 'approved') {
-              router.replace('/driver/dashboard');
-            } else if (approvalStatus === 'rejected') {
-              Alert.alert('Account Rejected', 'Your application was rejected. Please contact support.');
-              router.replace('/driver/pending-approval');
-            } else {
-              // Pending approval
-              router.replace('/driver/pending-approval');
-            }
+          // DRIVER FLOW - Check status by phone first
+          const statusResponse = await getDriverStatusByPhone(phone);
+          console.log('Driver status response:', statusResponse.data);
+          
+          if (!statusResponse.data.found || statusResponse.data.status === 'NOT_FOUND') {
+            // Driver not registered - open registration form
+            router.replace(`/auth/driver-onboarding?phone=${phone}`);
+          } else if (statusResponse.data.status === 'PENDING') {
+            // Driver registered but pending approval
+            await setUser({
+              driver_id: statusResponse.data.driver_id,
+              phone: phone,
+              name: statusResponse.data.full_name,
+              role: 'driver',
+              approval_status: 'pending',
+            });
+            router.replace('/driver/pending-approval');
+          } else if (statusResponse.data.status === 'APPROVED') {
+            // Driver approved - open dashboard
+            await setUser(response.data.user);
+            router.replace('/driver/dashboard');
+          } else if (statusResponse.data.status === 'REJECTED') {
+            // Driver rejected
+            await setUser({
+              driver_id: statusResponse.data.driver_id,
+              phone: phone,
+              name: statusResponse.data.full_name,
+              role: 'driver',
+              approval_status: 'rejected',
+            });
+            Alert.alert('Account Rejected', statusResponse.data.rejection_reason || 'Your application was rejected.');
+            router.replace('/driver/pending-approval');
           }
         }
       }

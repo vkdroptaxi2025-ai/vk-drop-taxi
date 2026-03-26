@@ -23,6 +23,38 @@ db = client[os.environ['DB_NAME']]
 app = FastAPI(title="VK Drop Taxi - Complete System")
 api_router = APIRouter(prefix="/api")
 
+# ==================== BRANDED ID GENERATOR ====================
+async def get_next_counter(counter_name: str, start_value: int = 1001) -> int:
+    """Get next counter value for branded IDs"""
+    counter = await db.counters.find_one_and_update(
+        {"_id": counter_name},
+        {"$inc": {"value": 1}},
+        upsert=True,
+        return_document=True
+    )
+    if counter['value'] < start_value:
+        await db.counters.update_one(
+            {"_id": counter_name},
+            {"$set": {"value": start_value}}
+        )
+        return start_value
+    return counter['value']
+
+async def generate_driver_id() -> str:
+    """Generate branded driver ID like VKDRV1001"""
+    counter = await get_next_counter("driver_counter", 1001)
+    return f"VKDRV{counter}"
+
+async def generate_customer_id() -> str:
+    """Generate branded customer ID like VKCST1001"""
+    counter = await get_next_counter("customer_counter", 1001)
+    return f"VKCST{counter}"
+
+async def generate_booking_id() -> str:
+    """Generate branded booking ID like VKBK1001"""
+    counter = await get_next_counter("booking_counter", 1001)
+    return f"VKBK{counter}"
+
 # ==================== ENUMS ====================
 class UserRole(str, Enum):
     CUSTOMER = "customer"
@@ -399,6 +431,33 @@ async def verify_otp(request: OTPVerify):
     
     return {"success": False, "message": "Invalid role"}
 
+# ==================== DRIVER STATUS BY PHONE ====================
+@api_router.get("/driver/phone/{phone}/status")
+async def get_driver_status_by_phone(phone: str):
+    """
+    Check driver status by phone number.
+    Returns: NOT_FOUND, PENDING, APPROVED, or REJECTED
+    """
+    driver = await db.drivers.find_one({"phone": phone})
+    if not driver:
+        return {
+            "success": True,
+            "found": False,
+            "status": "NOT_FOUND",
+            "message": "Driver not registered"
+        }
+    
+    return {
+        "success": True,
+        "found": True,
+        "driver_id": driver.get("driver_id"),
+        "status": driver.get("approval_status", "pending").upper(),
+        "full_name": driver.get("full_name"),
+        "phone": driver.get("phone"),
+        "vehicle_number": driver.get("vehicle_number"),
+        "rejection_reason": driver.get("rejection_reason")
+    }
+
 # ==================== CUSTOMER ENDPOINTS ====================
 @api_router.post("/customer/register")
 async def register_customer(customer: CustomerRegister):
@@ -406,8 +465,11 @@ async def register_customer(customer: CustomerRegister):
     if existing:
         raise HTTPException(status_code=400, detail="Customer already exists")
     
+    # Generate branded customer ID (VKCST1001, VKCST1002, etc.)
+    customer_id = await generate_customer_id()
+    
     user_data = {
-        "user_id": str(uuid.uuid4()),
+        "user_id": customer_id,
         "phone": customer.phone,
         "name": customer.name,
         "location": customer.location.dict() if customer.location else None,
@@ -418,7 +480,7 @@ async def register_customer(customer: CustomerRegister):
     await db.users.insert_one(user_data)
     
     wallet_data = {
-        "user_id": user_data['user_id'],
+        "user_id": customer_id,
         "balance": 0.0,
         "transactions": []
     }
@@ -685,14 +747,15 @@ async def get_driver_expiry_alerts(driver_id: str):
 async def onboard_driver_comprehensive(data: ComprehensiveDriverOnboarding):
     """
     Complete driver onboarding with all details and documents.
-    Creates a new driver with PENDING status.
+    Creates a new driver with PENDING status and branded ID (VKDRV1001, etc.)
     """
     # Check if driver already exists
     existing = await db.drivers.find_one({"phone": data.basic_details.phone})
     if existing:
         raise HTTPException(status_code=400, detail="Driver with this phone already exists")
     
-    driver_id = str(uuid.uuid4())
+    # Generate branded driver ID (VKDRV1001, VKDRV1002, etc.)
+    driver_id = await generate_driver_id()
     
     # Normalize vehicle type
     vehicle_type = data.vehicle_details.vehicle_type.lower()
@@ -1050,8 +1113,11 @@ async def create_booking(booking: BookingCreate):
     commission = fare * 0.10
     driver_earning = fare - commission
     
+    # Generate branded booking ID (VKBK1001, VKBK1002, etc.)
+    booking_id = await generate_booking_id()
+    
     booking_data = {
-        "booking_id": str(uuid.uuid4()),
+        "booking_id": booking_id,
         "customer_id": booking.customer_id,
         "driver_id": driver['driver_id'],
         "pickup": booking.pickup.dict(),
@@ -1494,9 +1560,12 @@ async def create_smart_booking(booking: SmartBookingCreate):
         # Select top driver
         selected_driver = eligible_drivers[0]['driver']
     
+    # Generate branded booking ID (VKBK1001, VKBK1002, etc.)
+    booking_id = await generate_booking_id()
+    
     # Create booking
     booking_data = {
-        "booking_id": str(uuid.uuid4()),
+        "booking_id": booking_id,
         "customer_id": booking.customer_id,
         "driver_id": selected_driver['driver_id'],
         "pickup": booking.pickup.dict(),

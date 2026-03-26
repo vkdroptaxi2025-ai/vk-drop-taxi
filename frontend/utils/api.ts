@@ -29,6 +29,9 @@ export const onboardDriver = (data: any) =>
 export const getDriverApprovalStatus = (driverId: string) =>
   api.get(`/api/driver/${driverId}/status`);
 
+export const getDriverStatusByPhone = (phone: string) =>
+  api.get(`/api/driver/phone/${phone}/status`);
+
 // Customer APIs
 export const getCustomerProfile = (customerId: string) =>
   api.get(`/api/customer/${customerId}/profile`);
