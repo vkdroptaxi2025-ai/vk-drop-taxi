@@ -670,6 +670,28 @@ export default function DriverOnboardingForm() {
     </View>
   );
 
+  // UPI Configuration (can be fetched from backend in future)
+  const UPI_ID = 'vkdrptxi@ptyes';
+  const PAYMENT_AMOUNT = 500;
+
+  // Copy UPI ID to clipboard
+  const copyUpiId = async () => {
+    try {
+      // For React Native, we need to use Clipboard
+      const Clipboard = await import('expo-clipboard');
+      await Clipboard.setStringAsync(UPI_ID);
+      Alert.alert('Copied!', 'UPI ID copied to clipboard');
+    } catch (error) {
+      // Fallback for web
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        navigator.clipboard.writeText(UPI_ID);
+        Alert.alert('Copied!', 'UPI ID copied to clipboard');
+      } else {
+        Alert.alert('UPI ID', UPI_ID);
+      }
+    }
+  };
+
   // Render Section 7 - Payment
   const renderSection7 = () => (
     <View style={styles.sectionContent}>
@@ -677,16 +699,22 @@ export default function DriverOnboardingForm() {
       <Text style={styles.sectionHint}>Pay attachment fee to complete registration</Text>
       
       <View style={styles.paymentCard}>
-        <Text style={styles.paymentAmount}>Rs.500</Text>
+        <Text style={styles.paymentAmount}>₹{PAYMENT_AMOUNT}</Text>
         <Text style={styles.paymentNote}>One-time attachment fee (NON-REFUNDABLE)</Text>
       </View>
       
       <View style={styles.upiBox}>
         <Text style={styles.upiLabel}>UPI ID</Text>
-        <Text style={styles.upiId}>vkdrop@upi</Text>
+        <View style={styles.upiRow}>
+          <Text style={styles.upiId}>{UPI_ID}</Text>
+          <TouchableOpacity style={styles.copyBtn} onPress={copyUpiId}>
+            <Ionicons name="copy-outline" size={20} color={COLORS.secondary} />
+            <Text style={styles.copyBtnText}>Copy</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.upiInstructions}>
           1. Open any UPI app (GPay, PhonePe, Paytm){'\n'}
-          2. Pay Rs.500 to above UPI ID{'\n'}
+          2. Pay ₹{PAYMENT_AMOUNT} to above UPI ID{'\n'}
           3. Take screenshot of payment{'\n'}
           4. Upload screenshot below
         </Text>
@@ -1057,4 +1085,24 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   primaryButtonText: { fontSize: 16, fontWeight: 'bold', color: COLORS.text },
+  upiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(46, 125, 50, 0.1)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 4,
+  },
+  copyBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.secondary,
+  },
 });
