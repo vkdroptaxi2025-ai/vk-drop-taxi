@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -41,6 +41,39 @@ const SECTIONS = [
   { id: 7, title: 'Payment', icon: 'card' },
   { id: 8, title: 'Submit', icon: 'checkmark-circle' },
 ];
+
+// Upload Button Component - DEFINED OUTSIDE to prevent re-creation
+const UploadButton = React.memo(({ 
+  label, 
+  value, 
+  onPress,
+  required = true 
+}: { 
+  label: string; 
+  value: string | null; 
+  onPress: () => void;
+  required?: boolean;
+}) => (
+  <TouchableOpacity 
+    style={[styles.uploadBtn, value && styles.uploadBtnDone]}
+    onPress={onPress}
+  >
+    {value ? (
+      <View style={styles.uploadDone}>
+        <Image source={{ uri: value }} style={styles.uploadPreview} />
+        <View style={styles.uploadCheck}>
+          <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+        </View>
+      </View>
+    ) : (
+      <View style={styles.uploadEmpty}>
+        <Ionicons name="cloud-upload-outline" size={28} color={COLORS.secondary} />
+        <Text style={styles.uploadLabel}>{label}</Text>
+        {required && <Text style={styles.requiredStar}>*</Text>}
+      </View>
+    )}
+  </TouchableOpacity>
+));
 
 export default function DriverOnboardingForm() {
   const router = useRouter();
@@ -90,11 +123,10 @@ export default function DriverOnboardingForm() {
   const [vehicleRight, setVehicleRight] = useState<string | null>(null);
 
   // Section 7: Payment
-  const [paymentAmount, setPaymentAmount] = useState('500');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string | null>(null);
 
-  // Image picker
-  const pickImage = async (setter: (uri: string) => void, label: string) => {
+  // Image picker - memoized to prevent re-creation
+  const pickImage = useCallback(async (setter: (uri: string) => void, label: string) => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -120,10 +152,10 @@ export default function DriverOnboardingForm() {
       console.error('Image picker error:', error);
       Alert.alert('Error', 'Failed to pick image');
     }
-  };
+  }, []);
 
   // Validation for each section
-  const validateSection = (section: number): boolean => {
+  const validateSection = useCallback((section: number): boolean => {
     switch (section) {
       case 1:
         if (!fullName.trim()) { Alert.alert('Required', 'Enter full name'); return false; }
@@ -166,19 +198,21 @@ export default function DriverOnboardingForm() {
       default:
         return true;
     }
-  };
+  }, [fullName, address, aadhaarNumber, dlNumber, experience, driverPhoto, driverWithVehicle, 
+      aadhaarFront, aadhaarBack, licenseFront, licenseBack, vehicleNumber, vehicleModel, vehicleYear,
+      rcFront, rcBack, insurance, permit, pollution, vehicleFront, vehicleBack, vehicleLeft, vehicleRight, paymentScreenshot]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (validateSection(currentSection)) {
       setCurrentSection(currentSection + 1);
     }
-  };
+  }, [currentSection, validateSection]);
 
-  const handlePrev = () => {
+  const handlePrev = useCallback(() => {
     if (currentSection > 1) {
       setCurrentSection(currentSection - 1);
     }
-  };
+  }, [currentSection]);
 
   const handleSubmit = async () => {
     // Final validation - include payment section (7)
@@ -231,7 +265,7 @@ export default function DriverOnboardingForm() {
           right_photo: vehicleRight,
         },
         payment: paymentScreenshot ? {
-          amount: parseInt(paymentAmount) || 500,
+          amount: 500,
           screenshot: paymentScreenshot,
         } : null,
       };
@@ -245,7 +279,7 @@ export default function DriverOnboardingForm() {
         await setUser({
           driver_id: response.data.driver_id,
           phone: phone as string,
-          name: fullName, // Use 'name' not 'full_name' to match authStore interface
+          name: fullName,
           role: 'driver',
           approval_status: 'pending',
         });
@@ -287,273 +321,334 @@ export default function DriverOnboardingForm() {
     );
   }
 
-  // Upload Button Component
-  const UploadButton = ({ 
-    label, 
-    value, 
-    onPress,
-    required = true 
-  }: { 
-    label: string; 
-    value: string | null; 
-    onPress: () => void;
-    required?: boolean;
-  }) => (
-    <TouchableOpacity 
-      style={[styles.uploadBtn, value && styles.uploadBtnDone]}
-      onPress={onPress}
-    >
-      {value ? (
-        <View style={styles.uploadDone}>
-          <Image source={{ uri: value }} style={styles.uploadPreview} />
-          <View style={styles.uploadCheck}>
-            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-          </View>
-        </View>
-      ) : (
-        <View style={styles.uploadEmpty}>
-          <Ionicons name="cloud-upload-outline" size={28} color={COLORS.secondary} />
-          <Text style={styles.uploadLabel}>{label}</Text>
-          {required && <Text style={styles.requiredStar}>*</Text>}
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+  // Render Section 1 - Basic Details
+  const renderSection1 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Driver Basic Details</Text>
+      
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Full Name <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={fullName}
+          onChangeText={setFullName}
+          placeholder="Enter full name"
+          placeholderTextColor={COLORS.textLight}
+        />
+      </View>
 
-  // Input Component
-  const FormInput = ({
-    label,
-    value,
-    onChangeText,
-    placeholder,
-    keyboardType = 'default',
-    maxLength,
-    editable = true,
-    required = true,
-  }: any) => (
-    <View style={styles.inputGroup}>
-      <Text style={styles.inputLabel}>
-        {label} {required && <Text style={styles.requiredStar}>*</Text>}
-      </Text>
-      <TextInput
-        style={[styles.input, !editable && styles.inputDisabled]}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={COLORS.textLight}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-        editable={editable}
-      />
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Mobile Number <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={[styles.input, styles.inputDisabled]}
+          value={phone as string}
+          editable={false}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Address <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={address}
+          onChangeText={setAddress}
+          placeholder="Complete address"
+          placeholderTextColor={COLORS.textLight}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Aadhaar Number <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={aadhaarNumber}
+          onChangeText={setAadhaarNumber}
+          placeholder="12-digit Aadhaar"
+          placeholderTextColor={COLORS.textLight}
+          keyboardType="numeric"
+          maxLength={12}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>PAN Number</Text>
+        <TextInput
+          style={styles.input}
+          value={panNumber}
+          onChangeText={setPanNumber}
+          placeholder="PAN (Optional)"
+          placeholderTextColor={COLORS.textLight}
+          maxLength={10}
+          autoCapitalize="characters"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Driving License No. <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={dlNumber}
+          onChangeText={setDlNumber}
+          placeholder="e.g. TN01 2020 0012345"
+          placeholderTextColor={COLORS.textLight}
+          autoCapitalize="characters"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Driving Experience (Years) <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={experience}
+          onChangeText={setExperience}
+          placeholder="e.g. 5"
+          placeholderTextColor={COLORS.textLight}
+          keyboardType="numeric"
+          maxLength={2}
+        />
+      </View>
     </View>
   );
 
-  // Render Section Content
+  // Render Section 2 - Driver Photos
+  const renderSection2 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Driver Photos</Text>
+      <Text style={styles.sectionHint}>Upload clear photos for verification</Text>
+      <View style={styles.uploadGrid}>
+        <View style={styles.uploadItem}>
+          <Text style={styles.uploadTitle}>Driver Photo *</Text>
+          <UploadButton label="Passport Size" value={driverPhoto} onPress={() => pickImage(setDriverPhoto, 'Driver Photo')} />
+        </View>
+        <View style={styles.uploadItem}>
+          <Text style={styles.uploadTitle}>Driver with Vehicle *</Text>
+          <UploadButton label="Number Plate Visible" value={driverWithVehicle} onPress={() => pickImage(setDriverWithVehicle, 'Driver with Vehicle')} />
+        </View>
+      </View>
+    </View>
+  );
+
+  // Render Section 3 - Driver Documents
+  const renderSection3 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Driver Documents</Text>
+      <Text style={styles.sectionHint}>Upload both sides of documents</Text>
+      <Text style={styles.docLabel}>Aadhaar Card</Text>
+      <View style={styles.uploadRow}>
+        <UploadButton label="Front Side" value={aadhaarFront} onPress={() => pickImage(setAadhaarFront, 'Aadhaar Front')} />
+        <UploadButton label="Back Side" value={aadhaarBack} onPress={() => pickImage(setAadhaarBack, 'Aadhaar Back')} />
+      </View>
+      <Text style={styles.docLabel}>Driving License</Text>
+      <View style={styles.uploadRow}>
+        <UploadButton label="Front Side" value={licenseFront} onPress={() => pickImage(setLicenseFront, 'License Front')} />
+        <UploadButton label="Back Side" value={licenseBack} onPress={() => pickImage(setLicenseBack, 'License Back')} />
+      </View>
+    </View>
+  );
+
+  // Render Section 4 - Vehicle Details
+  const renderSection4 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Vehicle Details</Text>
+      <Text style={styles.inputLabel}>Vehicle Type *</Text>
+      <View style={styles.vehicleTypeRow}>
+        {['sedan', 'suv', 'crysta'].map((type) => (
+          <TouchableOpacity
+            key={type}
+            style={[styles.vehicleTypeBtn, vehicleType === type && styles.vehicleTypeBtnActive]}
+            onPress={() => setVehicleType(type)}
+          >
+            <Ionicons name="car" size={24} color={vehicleType === type ? COLORS.background : COLORS.secondary} />
+            <Text style={[styles.vehicleTypeText, vehicleType === type && styles.vehicleTypeTextActive]}>
+              {type.charAt(0).toUpperCase() + type.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Vehicle Number <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={vehicleNumber}
+          onChangeText={setVehicleNumber}
+          placeholder="e.g. TN01AB1234"
+          placeholderTextColor={COLORS.textLight}
+          autoCapitalize="characters"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Vehicle Model <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={vehicleModel}
+          onChangeText={setVehicleModel}
+          placeholder="e.g. Swift Dzire"
+          placeholderTextColor={COLORS.textLight}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Vehicle Year <Text style={styles.requiredStar}>*</Text></Text>
+        <TextInput
+          style={styles.input}
+          value={vehicleYear}
+          onChangeText={setVehicleYear}
+          placeholder="e.g. 2020"
+          placeholderTextColor={COLORS.textLight}
+          keyboardType="numeric"
+          maxLength={4}
+        />
+      </View>
+    </View>
+  );
+
+  // Render Section 5 - Vehicle Documents
+  const renderSection5 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Vehicle Documents</Text>
+      <Text style={styles.sectionHint}>All documents are mandatory</Text>
+      <Text style={styles.docLabel}>RC Book</Text>
+      <View style={styles.uploadRow}>
+        <UploadButton label="RC Front" value={rcFront} onPress={() => pickImage(setRcFront, 'RC Front')} />
+        <UploadButton label="RC Back" value={rcBack} onPress={() => pickImage(setRcBack, 'RC Back')} />
+      </View>
+      <Text style={styles.docLabel}>Other Documents</Text>
+      <View style={styles.uploadRow}>
+        <UploadButton label="Insurance" value={insurance} onPress={() => pickImage(setInsurance, 'Insurance')} />
+        <UploadButton label="Permit" value={permit} onPress={() => pickImage(setPermit, 'Permit')} />
+      </View>
+      <View style={styles.uploadSingle}>
+        <UploadButton label="Pollution Certificate" value={pollution} onPress={() => pickImage(setPollution, 'Pollution')} />
+      </View>
+    </View>
+  );
+
+  // Render Section 6 - Vehicle Photos
+  const renderSection6 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Vehicle Photos</Text>
+      <Text style={styles.sectionHint}>Upload clear photos from all angles</Text>
+      <View style={styles.uploadGrid}>
+        <View style={styles.uploadItem}>
+          <Text style={styles.uploadTitle}>Front View *</Text>
+          <UploadButton label="Front" value={vehicleFront} onPress={() => pickImage(setVehicleFront, 'Front')} />
+        </View>
+        <View style={styles.uploadItem}>
+          <Text style={styles.uploadTitle}>Back View *</Text>
+          <UploadButton label="Back" value={vehicleBack} onPress={() => pickImage(setVehicleBack, 'Back')} />
+        </View>
+        <View style={styles.uploadItem}>
+          <Text style={styles.uploadTitle}>Left Side *</Text>
+          <UploadButton label="Left" value={vehicleLeft} onPress={() => pickImage(setVehicleLeft, 'Left')} />
+        </View>
+        <View style={styles.uploadItem}>
+          <Text style={styles.uploadTitle}>Right Side *</Text>
+          <UploadButton label="Right" value={vehicleRight} onPress={() => pickImage(setVehicleRight, 'Right')} />
+        </View>
+      </View>
+    </View>
+  );
+
+  // Render Section 7 - Payment
+  const renderSection7 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Registration Payment</Text>
+      <Text style={styles.sectionHint}>Pay attachment fee to complete registration</Text>
+      
+      <View style={styles.paymentCard}>
+        <Text style={styles.paymentAmount}>₹500</Text>
+        <Text style={styles.paymentNote}>One-time attachment fee (NON-REFUNDABLE)</Text>
+      </View>
+      
+      <View style={styles.upiBox}>
+        <Text style={styles.upiLabel}>UPI ID</Text>
+        <Text style={styles.upiId}>vkdrop@upi</Text>
+        <Text style={styles.upiInstructions}>
+          1. Open any UPI app (GPay, PhonePe, Paytm){'\n'}
+          2. Pay ₹500 to above UPI ID{'\n'}
+          3. Take screenshot of payment{'\n'}
+          4. Upload screenshot below
+        </Text>
+      </View>
+      
+      <Text style={styles.docLabel}>Payment Screenshot <Text style={styles.requiredStar}>* MANDATORY</Text></Text>
+      <View style={styles.uploadSingle}>
+        <UploadButton label="Upload Payment Proof" value={paymentScreenshot} onPress={() => pickImage(setPaymentScreenshot, 'Payment')} required={true} />
+      </View>
+      
+      <View style={styles.warningBox}>
+        <Ionicons name="warning" size={20} color={COLORS.error} />
+        <Text style={styles.warningText}>You cannot submit without payment screenshot</Text>
+      </View>
+    </View>
+  );
+
+  // Render Section 8 - Submit
+  const renderSection8 = () => (
+    <View style={styles.sectionContent}>
+      <Text style={styles.sectionTitle}>Review & Submit</Text>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>Application Summary</Text>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Name:</Text>
+          <Text style={styles.summaryValue}>{fullName}</Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Phone:</Text>
+          <Text style={styles.summaryValue}>{phone}</Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Vehicle:</Text>
+          <Text style={styles.summaryValue}>{vehicleType.toUpperCase()} - {vehicleNumber}</Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Documents:</Text>
+          <Text style={styles.summaryValue}>
+            {[aadhaarFront, aadhaarBack, licenseFront, licenseBack, rcFront, rcBack, insurance, permit, pollution].filter(Boolean).length} / 9 uploaded
+          </Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Photos:</Text>
+          <Text style={styles.summaryValue}>
+            {[driverPhoto, driverWithVehicle, vehicleFront, vehicleBack, vehicleLeft, vehicleRight].filter(Boolean).length} / 6 uploaded
+          </Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Payment:</Text>
+          <Text style={styles.summaryValue}>{paymentScreenshot ? '✅ Uploaded' : '❌ Not uploaded'}</Text>
+        </View>
+      </View>
+      <TouchableOpacity
+        style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+        onPress={handleSubmit}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <Ionicons name="checkmark-circle" size={24} color="#fff" />
+            <Text style={styles.submitBtnText}>SUBMIT APPLICATION</Text>
+          </>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Render Section Content based on current section
   const renderSectionContent = () => {
     switch (currentSection) {
-      case 1:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Driver Basic Details</Text>
-            <FormInput label="Full Name" value={fullName} onChangeText={setFullName} placeholder="Enter full name" />
-            <FormInput label="Mobile Number" value={phone as string} editable={false} />
-            <FormInput label="Address" value={address} onChangeText={setAddress} placeholder="Complete address" />
-            <FormInput label="Aadhaar Number" value={aadhaarNumber} onChangeText={setAadhaarNumber} placeholder="12-digit Aadhaar" keyboardType="numeric" maxLength={12} />
-            <FormInput label="PAN Number" value={panNumber} onChangeText={setPanNumber} placeholder="PAN (Optional)" required={false} maxLength={10} />
-            <FormInput label="Driving License No." value={dlNumber} onChangeText={setDlNumber} placeholder="e.g. TN01 2020 0012345" />
-            <FormInput label="Driving Experience (Years)" value={experience} onChangeText={setExperience} placeholder="e.g. 5" keyboardType="numeric" maxLength={2} />
-          </View>
-        );
-
-      case 2:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Driver Photos</Text>
-            <Text style={styles.sectionHint}>Upload clear photos for verification</Text>
-            <View style={styles.uploadGrid}>
-              <View style={styles.uploadItem}>
-                <Text style={styles.uploadTitle}>Driver Photo *</Text>
-                <UploadButton label="Passport Size" value={driverPhoto} onPress={() => pickImage(setDriverPhoto, 'Driver Photo')} />
-              </View>
-              <View style={styles.uploadItem}>
-                <Text style={styles.uploadTitle}>Driver with Vehicle *</Text>
-                <UploadButton label="Number Plate Visible" value={driverWithVehicle} onPress={() => pickImage(setDriverWithVehicle, 'Driver with Vehicle')} />
-              </View>
-            </View>
-          </View>
-        );
-
-      case 3:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Driver Documents</Text>
-            <Text style={styles.sectionHint}>Upload both sides of documents</Text>
-            <Text style={styles.docLabel}>Aadhaar Card</Text>
-            <View style={styles.uploadRow}>
-              <UploadButton label="Front Side" value={aadhaarFront} onPress={() => pickImage(setAadhaarFront, 'Aadhaar Front')} />
-              <UploadButton label="Back Side" value={aadhaarBack} onPress={() => pickImage(setAadhaarBack, 'Aadhaar Back')} />
-            </View>
-            <Text style={styles.docLabel}>Driving License</Text>
-            <View style={styles.uploadRow}>
-              <UploadButton label="Front Side" value={licenseFront} onPress={() => pickImage(setLicenseFront, 'License Front')} />
-              <UploadButton label="Back Side" value={licenseBack} onPress={() => pickImage(setLicenseBack, 'License Back')} />
-            </View>
-          </View>
-        );
-
-      case 4:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Vehicle Details</Text>
-            <Text style={styles.inputLabel}>Vehicle Type *</Text>
-            <View style={styles.vehicleTypeRow}>
-              {['sedan', 'suv', 'crysta'].map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[styles.vehicleTypeBtn, vehicleType === type && styles.vehicleTypeBtnActive]}
-                  onPress={() => setVehicleType(type)}
-                >
-                  <Ionicons name="car" size={24} color={vehicleType === type ? COLORS.background : COLORS.secondary} />
-                  <Text style={[styles.vehicleTypeText, vehicleType === type && styles.vehicleTypeTextActive]}>
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <FormInput label="Vehicle Number" value={vehicleNumber} onChangeText={setVehicleNumber} placeholder="e.g. TN01AB1234" />
-            <FormInput label="Vehicle Model" value={vehicleModel} onChangeText={setVehicleModel} placeholder="e.g. Swift Dzire" />
-            <FormInput label="Vehicle Year" value={vehicleYear} onChangeText={setVehicleYear} placeholder="e.g. 2020" keyboardType="numeric" maxLength={4} />
-          </View>
-        );
-
-      case 5:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Vehicle Documents</Text>
-            <Text style={styles.sectionHint}>All documents are mandatory</Text>
-            <Text style={styles.docLabel}>RC Book</Text>
-            <View style={styles.uploadRow}>
-              <UploadButton label="RC Front" value={rcFront} onPress={() => pickImage(setRcFront, 'RC Front')} />
-              <UploadButton label="RC Back" value={rcBack} onPress={() => pickImage(setRcBack, 'RC Back')} />
-            </View>
-            <Text style={styles.docLabel}>Other Documents</Text>
-            <View style={styles.uploadRow}>
-              <UploadButton label="Insurance" value={insurance} onPress={() => pickImage(setInsurance, 'Insurance')} />
-              <UploadButton label="Permit" value={permit} onPress={() => pickImage(setPermit, 'Permit')} />
-            </View>
-            <View style={styles.uploadSingle}>
-              <UploadButton label="Pollution Certificate" value={pollution} onPress={() => pickImage(setPollution, 'Pollution')} />
-            </View>
-          </View>
-        );
-
-      case 6:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Vehicle Photos</Text>
-            <Text style={styles.sectionHint}>Upload clear photos from all angles</Text>
-            <View style={styles.uploadGrid}>
-              <View style={styles.uploadItem}>
-                <Text style={styles.uploadTitle}>Front View *</Text>
-                <UploadButton label="Front" value={vehicleFront} onPress={() => pickImage(setVehicleFront, 'Front')} />
-              </View>
-              <View style={styles.uploadItem}>
-                <Text style={styles.uploadTitle}>Back View *</Text>
-                <UploadButton label="Back" value={vehicleBack} onPress={() => pickImage(setVehicleBack, 'Back')} />
-              </View>
-              <View style={styles.uploadItem}>
-                <Text style={styles.uploadTitle}>Left Side *</Text>
-                <UploadButton label="Left" value={vehicleLeft} onPress={() => pickImage(setVehicleLeft, 'Left')} />
-              </View>
-              <View style={styles.uploadItem}>
-                <Text style={styles.uploadTitle}>Right Side *</Text>
-                <UploadButton label="Right" value={vehicleRight} onPress={() => pickImage(setVehicleRight, 'Right')} />
-              </View>
-            </View>
-          </View>
-        );
-
-      case 7:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Registration Payment</Text>
-            <Text style={styles.sectionHint}>Pay attachment fee to complete registration</Text>
-            
-            <View style={styles.paymentCard}>
-              <Text style={styles.paymentAmount}>₹500</Text>
-              <Text style={styles.paymentNote}>One-time attachment fee (NON-REFUNDABLE)</Text>
-            </View>
-            
-            <View style={styles.upiBox}>
-              <Text style={styles.upiLabel}>UPI ID</Text>
-              <Text style={styles.upiId}>vkdrop@upi</Text>
-              <Text style={styles.upiInstructions}>
-                1. Open any UPI app (GPay, PhonePe, Paytm){'\n'}
-                2. Pay ₹500 to above UPI ID{'\n'}
-                3. Take screenshot of payment{'\n'}
-                4. Upload screenshot below
-              </Text>
-            </View>
-            
-            <Text style={styles.docLabel}>Payment Screenshot <Text style={styles.requiredStar}>* MANDATORY</Text></Text>
-            <View style={styles.uploadSingle}>
-              <UploadButton label="Upload Payment Proof" value={paymentScreenshot} onPress={() => pickImage(setPaymentScreenshot, 'Payment')} required={true} />
-            </View>
-            
-            <View style={styles.warningBox}>
-              <Ionicons name="warning" size={20} color={COLORS.error} />
-              <Text style={styles.warningText}>You cannot submit without payment screenshot</Text>
-            </View>
-          </View>
-        );
-
-      case 8:
-        return (
-          <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Review & Submit</Text>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>Application Summary</Text>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Name:</Text>
-                <Text style={styles.summaryValue}>{fullName}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Phone:</Text>
-                <Text style={styles.summaryValue}>{phone}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Vehicle:</Text>
-                <Text style={styles.summaryValue}>{vehicleType.toUpperCase()} - {vehicleNumber}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Documents:</Text>
-                <Text style={styles.summaryValue}>
-                  {[aadhaarFront, aadhaarBack, licenseFront, licenseBack, rcFront, rcBack, insurance, permit, pollution].filter(Boolean).length} / 9 uploaded
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Photos:</Text>
-                <Text style={styles.summaryValue}>
-                  {[driverPhoto, driverWithVehicle, vehicleFront, vehicleBack, vehicleLeft, vehicleRight].filter(Boolean).length} / 6 uploaded
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                  <Text style={styles.submitBtnText}>SUBMIT APPLICATION</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        );
+      case 1: return renderSection1();
+      case 2: return renderSection2();
+      case 3: return renderSection3();
+      case 4: return renderSection4();
+      case 5: return renderSection5();
+      case 6: return renderSection6();
+      case 7: return renderSection7();
+      case 8: return renderSection8();
+      default: return renderSection1();
     }
   };
 
@@ -586,8 +681,13 @@ export default function DriverOnboardingForm() {
       </View>
 
       {/* Content */}
-      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView 
+          style={styles.scrollView} 
+          contentContainerStyle={styles.scrollContent} 
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {renderSectionContent()}
           <View style={{ height: 100 }} />
         </ScrollView>
@@ -717,7 +817,29 @@ const styles = StyleSheet.create({
   },
   paymentAmount: { fontSize: 36, fontWeight: 'bold', color: COLORS.text },
   paymentNote: { fontSize: 14, color: COLORS.textLight, marginTop: 4 },
-  paymentSkip: { fontSize: 12, color: COLORS.textLight, textAlign: 'center', marginTop: 12 },
+  upiBox: {
+    backgroundColor: '#FFF9E6',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  upiLabel: { fontSize: 12, color: COLORS.textLight, marginBottom: 4 },
+  upiId: { fontSize: 22, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 12 },
+  upiInstructions: { fontSize: 14, color: COLORS.text, lineHeight: 22 },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  warningText: { fontSize: 13, color: COLORS.error, flex: 1 },
   summaryCard: {
     backgroundColor: COLORS.background,
     borderRadius: 12,
@@ -793,45 +915,4 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   primaryButtonText: { fontSize: 16, fontWeight: 'bold', color: COLORS.text },
-  // UPI and Payment styles
-  upiBox: {
-    backgroundColor: '#FFF9E6',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-  },
-  upiLabel: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    marginBottom: 4,
-  },
-  upiId: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 12,
-  },
-  upiInstructions: {
-    fontSize: 14,
-    color: COLORS.text,
-    lineHeight: 22,
-  },
-  warningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-  },
-  warningText: {
-    fontSize: 13,
-    color: COLORS.error,
-    flex: 1,
-  },
 });
