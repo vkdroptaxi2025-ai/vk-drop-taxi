@@ -426,7 +426,7 @@ async def verify_otp(request: OTPVerify):
         raise HTTPException(status_code=400, detail="Invalid OTP")
     
     # ADMIN SECURITY: Only authorized phone number can login as admin
-    AUTHORIZED_ADMIN_PHONE = "9345538164"
+    AUTHORIZED_ADMIN_PHONE = os.environ.get('AUTHORIZED_ADMIN_PHONE', '9345538164')
     if request.role == UserRole.ADMIN:
         if request.phone != AUTHORIZED_ADMIN_PHONE:
             raise HTTPException(status_code=403, detail="Access Denied")
@@ -1167,13 +1167,18 @@ async def get_driver_earnings(driver_id: str):
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     
-    completed_rides = await db.bookings.find({
-        "driver_id": driver_id,
-        "status": BookingStatus.COMPLETED.value
-    }).to_list(1000)
-    
-    total_rides = len(completed_rides)
-    total_earnings = sum(ride.get('driver_earning', 0) for ride in completed_rides)
+    # Use MongoDB aggregation for efficient earnings calculation
+    earnings_pipeline = [
+        {"$match": {"driver_id": driver_id, "status": BookingStatus.COMPLETED.value}},
+        {"$group": {
+            "_id": None,
+            "total_rides": {"$sum": 1},
+            "total_earnings": {"$sum": "$driver_earning"}
+        }}
+    ]
+    earnings_result = await db.bookings.aggregate(earnings_pipeline).to_list(1)
+    total_rides = earnings_result[0]['total_rides'] if earnings_result else 0
+    total_earnings = earnings_result[0]['total_earnings'] if earnings_result else 0
     
     return {
         "success": True,
@@ -1428,9 +1433,18 @@ async def get_admin_stats():
     total_bookings = await db.bookings.count_documents({})
     completed_bookings = await db.bookings.count_documents({"status": BookingStatus.COMPLETED.value})
     
-    all_bookings = await db.bookings.find({"status": BookingStatus.COMPLETED.value}).to_list(10000)
-    total_revenue = sum(booking.get('fare', 0) for booking in all_bookings)
-    total_commission = sum(booking.get('commission', 0) for booking in all_bookings)
+    # Use MongoDB aggregation for efficient revenue calculation
+    revenue_pipeline = [
+        {"$match": {"status": BookingStatus.COMPLETED.value}},
+        {"$group": {
+            "_id": None,
+            "total_revenue": {"$sum": "$fare"},
+            "total_commission": {"$sum": "$commission"}
+        }}
+    ]
+    revenue_result = await db.bookings.aggregate(revenue_pipeline).to_list(1)
+    total_revenue = revenue_result[0]['total_revenue'] if revenue_result else 0
+    total_commission = revenue_result[0]['total_commission'] if revenue_result else 0
     
     return {
         "success": True,
