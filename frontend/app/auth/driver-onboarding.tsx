@@ -42,6 +42,14 @@ const SECTIONS = [
   { id: 8, title: 'Submit', icon: 'checkmark-circle' },
 ];
 
+// Safe Image Component to prevent crashes
+const SafeImage = ({ uri, style }: { uri: string | null; style: any }) => {
+  if (!uri || typeof uri !== 'string' || uri.length < 10) {
+    return null;
+  }
+  return <Image source={{ uri: uri }} style={style} />;
+};
+
 // Upload Button Component - DEFINED OUTSIDE to prevent re-creation
 const UploadButton = React.memo(({ 
   label, 
@@ -53,27 +61,31 @@ const UploadButton = React.memo(({
   value: string | null; 
   onPress: () => void;
   required?: boolean;
-}) => (
-  <TouchableOpacity 
-    style={[styles.uploadBtn, value && styles.uploadBtnDone]}
-    onPress={onPress}
-  >
-    {value ? (
-      <View style={styles.uploadDone}>
-        <Image source={{ uri: value }} style={styles.uploadPreview} />
-        <View style={styles.uploadCheck}>
-          <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+}) => {
+  const hasValidImage = value && typeof value === 'string' && value.length > 10;
+  
+  return (
+    <TouchableOpacity 
+      style={[styles.uploadBtn, hasValidImage && styles.uploadBtnDone]}
+      onPress={onPress}
+    >
+      {hasValidImage ? (
+        <View style={styles.uploadDone}>
+          <SafeImage uri={value} style={styles.uploadPreview} />
+          <View style={styles.uploadCheck}>
+            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+          </View>
         </View>
-      </View>
-    ) : (
-      <View style={styles.uploadEmpty}>
-        <Ionicons name="cloud-upload-outline" size={28} color={COLORS.secondary} />
-        <Text style={styles.uploadLabel}>{label}</Text>
-        {required && <Text style={styles.requiredStar}>*</Text>}
-      </View>
-    )}
-  </TouchableOpacity>
-));
+      ) : (
+        <View style={styles.uploadEmpty}>
+          <Ionicons name="cloud-upload-outline" size={28} color={COLORS.secondary} />
+          <Text style={styles.uploadLabel}>{label}</Text>
+          {required && <Text style={styles.requiredStar}>*</Text>}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+});
 
 export default function DriverOnboardingForm() {
   const router = useRouter();
@@ -125,88 +137,140 @@ export default function DriverOnboardingForm() {
   // Section 7: Payment
   const [paymentScreenshot, setPaymentScreenshot] = useState<string | null>(null);
 
-  // Image picker - memoized to prevent re-creation
+  // Image picker with multiple options
   const pickImage = useCallback(async (setter: (uri: string) => void, label: string) => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow access to your photo library');
-        return;
-      }
+    // Show option to choose camera or gallery
+    Alert.alert(
+      'Upload ' + label,
+      'Choose an option',
+      [
+        {
+          text: 'Camera',
+          onPress: async () => {
+            try {
+              const { status } = await ImagePicker.requestCameraPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission Required', 'Please allow camera access in your device settings');
+                return;
+              }
+              
+              const result = await ImagePicker.launchCameraAsync({
+                allowsEditing: true,
+                aspect: [4, 3],
+                quality: 0.3, // Lower quality for smaller file size
+                base64: true,
+              });
+              
+              handleImageResult(result, setter, label);
+            } catch (error: any) {
+              console.error('Camera error:', error);
+              Alert.alert('Camera Error', error.message || 'Failed to open camera. Please try gallery option.');
+            }
+          },
+        },
+        {
+          text: 'Gallery',
+          onPress: async () => {
+            try {
+              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission Required', 'Please allow photo library access in your device settings');
+                return;
+              }
+              
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: 'images',
+                allowsEditing: true,
+                aspect: [4, 3],
+                quality: 0.3, // Lower quality for smaller file size
+                base64: true,
+              });
+              
+              handleImageResult(result, setter, label);
+            } catch (error: any) {
+              console.error('Gallery error:', error);
+              Alert.alert('Gallery Error', error.message || 'Failed to open gallery. Please try again.');
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, []);
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images',
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.5,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const base64 = result.assets[0].base64;
-        if (base64) {
-          setter(`data:image/jpeg;base64,${base64}`);
-        }
+  // Handle image result
+  const handleImageResult = useCallback((result: ImagePicker.ImagePickerResult, setter: (uri: string) => void, label: string) => {
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      
+      if (asset.base64 && typeof asset.base64 === 'string' && asset.base64.length > 0) {
+        // Use base64 data
+        setter(`data:image/jpeg;base64,${asset.base64}`);
+        console.log(`${label} uploaded successfully (base64)`);
+      } else if (asset.uri && typeof asset.uri === 'string') {
+        // Fallback to URI - Note: This may not work for all upload scenarios
+        setter(asset.uri);
+        console.log(`${label} uploaded successfully (uri fallback)`);
+      } else {
+        Alert.alert('Upload Failed', 'Could not process the image. Please try a different image.');
       }
-    } catch (error) {
-      console.error('Image picker error:', error);
-      Alert.alert('Error', 'Failed to pick image');
     }
   }, []);
 
-  // Validation for each section
-  const validateSection = useCallback((section: number): boolean => {
+  // FIXED: Simplified validation - only validates on final submit, not blocking navigation
+  const validateSectionForSubmit = useCallback((section: number): { valid: boolean; message: string } => {
     switch (section) {
       case 1:
-        if (!fullName.trim()) { Alert.alert('Required', 'Enter full name'); return false; }
-        if (!address.trim()) { Alert.alert('Required', 'Enter address'); return false; }
-        if (!aadhaarNumber.trim() || aadhaarNumber.length !== 12) { Alert.alert('Required', 'Enter valid 12-digit Aadhaar'); return false; }
-        if (!dlNumber.trim()) { Alert.alert('Required', 'Enter DL number'); return false; }
-        if (!experience.trim() || parseInt(experience) < 1) { Alert.alert('Required', 'Enter driving experience'); return false; }
-        return true;
+        if (!fullName.trim()) return { valid: false, message: 'Enter full name in Basic Details' };
+        if (!address.trim()) return { valid: false, message: 'Enter address in Basic Details' };
+        if (!aadhaarNumber.trim() || aadhaarNumber.length !== 12) return { valid: false, message: 'Enter valid 12-digit Aadhaar in Basic Details' };
+        if (!dlNumber.trim()) return { valid: false, message: 'Enter DL number in Basic Details' };
+        if (!experience.trim() || parseInt(experience) < 1) return { valid: false, message: 'Enter driving experience in Basic Details' };
+        return { valid: true, message: '' };
       case 2:
-        if (!driverPhoto) { Alert.alert('Required', 'Upload driver photo'); return false; }
-        if (!driverWithVehicle) { Alert.alert('Required', 'Upload driver with vehicle photo'); return false; }
-        return true;
+        if (!driverPhoto) return { valid: false, message: 'Upload driver photo in Driver Photos section' };
+        if (!driverWithVehicle) return { valid: false, message: 'Upload driver with vehicle photo in Driver Photos section' };
+        return { valid: true, message: '' };
       case 3:
-        if (!aadhaarFront) { Alert.alert('Required', 'Upload Aadhaar front'); return false; }
-        if (!aadhaarBack) { Alert.alert('Required', 'Upload Aadhaar back'); return false; }
-        if (!licenseFront) { Alert.alert('Required', 'Upload License front'); return false; }
-        if (!licenseBack) { Alert.alert('Required', 'Upload License back'); return false; }
-        return true;
+        if (!aadhaarFront) return { valid: false, message: 'Upload Aadhaar front in Driver Documents section' };
+        if (!aadhaarBack) return { valid: false, message: 'Upload Aadhaar back in Driver Documents section' };
+        if (!licenseFront) return { valid: false, message: 'Upload License front in Driver Documents section' };
+        if (!licenseBack) return { valid: false, message: 'Upload License back in Driver Documents section' };
+        return { valid: true, message: '' };
       case 4:
-        if (!vehicleNumber.trim()) { Alert.alert('Required', 'Enter vehicle number'); return false; }
-        if (!vehicleModel.trim()) { Alert.alert('Required', 'Enter vehicle model'); return false; }
-        if (!vehicleYear.trim() || parseInt(vehicleYear) < 2000) { Alert.alert('Required', 'Enter valid year'); return false; }
-        return true;
+        if (!vehicleNumber.trim()) return { valid: false, message: 'Enter vehicle number in Vehicle Details' };
+        if (!vehicleModel.trim()) return { valid: false, message: 'Enter vehicle model in Vehicle Details' };
+        if (!vehicleYear.trim() || parseInt(vehicleYear) < 2000) return { valid: false, message: 'Enter valid vehicle year (2000+) in Vehicle Details' };
+        return { valid: true, message: '' };
       case 5:
-        if (!rcFront) { Alert.alert('Required', 'Upload RC front'); return false; }
-        if (!rcBack) { Alert.alert('Required', 'Upload RC back'); return false; }
-        if (!insurance) { Alert.alert('Required', 'Upload insurance'); return false; }
-        if (!permit) { Alert.alert('Required', 'Upload permit'); return false; }
-        if (!pollution) { Alert.alert('Required', 'Upload pollution certificate'); return false; }
-        return true;
+        if (!rcFront) return { valid: false, message: 'Upload RC front in Vehicle Documents section' };
+        if (!rcBack) return { valid: false, message: 'Upload RC back in Vehicle Documents section' };
+        if (!insurance) return { valid: false, message: 'Upload insurance in Vehicle Documents section' };
+        if (!permit) return { valid: false, message: 'Upload permit in Vehicle Documents section' };
+        if (!pollution) return { valid: false, message: 'Upload pollution certificate in Vehicle Documents section' };
+        return { valid: true, message: '' };
       case 6:
-        if (!vehicleFront) { Alert.alert('Required', 'Upload vehicle front photo'); return false; }
-        if (!vehicleBack) { Alert.alert('Required', 'Upload vehicle back photo'); return false; }
-        if (!vehicleLeft) { Alert.alert('Required', 'Upload vehicle left photo'); return false; }
-        if (!vehicleRight) { Alert.alert('Required', 'Upload vehicle right photo'); return false; }
-        return true;
+        if (!vehicleFront) return { valid: false, message: 'Upload vehicle front photo in Vehicle Photos section' };
+        if (!vehicleBack) return { valid: false, message: 'Upload vehicle back photo in Vehicle Photos section' };
+        if (!vehicleLeft) return { valid: false, message: 'Upload vehicle left photo in Vehicle Photos section' };
+        if (!vehicleRight) return { valid: false, message: 'Upload vehicle right photo in Vehicle Photos section' };
+        return { valid: true, message: '' };
       case 7:
-        if (!paymentScreenshot) { Alert.alert('Required', 'Payment screenshot is MANDATORY. Please pay ₹500 and upload proof.'); return false; }
-        return true;
+        if (!paymentScreenshot) return { valid: false, message: 'Payment screenshot is MANDATORY. Please pay ₹500 and upload proof.' };
+        return { valid: true, message: '' };
       default:
-        return true;
+        return { valid: true, message: '' };
     }
   }, [fullName, address, aadhaarNumber, dlNumber, experience, driverPhoto, driverWithVehicle, 
       aadhaarFront, aadhaarBack, licenseFront, licenseBack, vehicleNumber, vehicleModel, vehicleYear,
       rcFront, rcBack, insurance, permit, pollution, vehicleFront, vehicleBack, vehicleLeft, vehicleRight, paymentScreenshot]);
 
+  // FIXED: Next button now works without blocking - validates only on submit
   const handleNext = useCallback(() => {
-    if (validateSection(currentSection)) {
+    if (currentSection < 8) {
       setCurrentSection(currentSection + 1);
     }
-  }, [currentSection, validateSection]);
+  }, [currentSection]);
 
   const handlePrev = useCallback(() => {
     if (currentSection > 1) {
@@ -215,9 +279,11 @@ export default function DriverOnboardingForm() {
   }, [currentSection]);
 
   const handleSubmit = async () => {
-    // Final validation - include payment section (7)
+    // Final validation - check all sections
     for (let i = 1; i <= 7; i++) {
-      if (!validateSection(i)) {
+      const result = validateSectionForSubmit(i);
+      if (!result.valid) {
+        Alert.alert('Missing Information', result.message);
         setCurrentSection(i);
         return;
       }
@@ -306,6 +372,12 @@ export default function DriverOnboardingForm() {
             Your application has been submitted.{'\n'}
             Admin will verify your documents.
           </Text>
+          {driverId && (
+            <View style={styles.driverIdBox}>
+              <Text style={styles.driverIdLabel}>Your Driver ID</Text>
+              <Text style={styles.driverIdValue}>{driverId}</Text>
+            </View>
+          )}
           <View style={styles.statusBadge}>
             <Ionicons name="time" size={20} color={COLORS.primary} />
             <Text style={styles.statusText}>PENDING APPROVAL</Text>
@@ -321,10 +393,18 @@ export default function DriverOnboardingForm() {
     );
   }
 
+  // Get completion status for each section
+  const getSectionStatus = (sectionId: number): 'complete' | 'incomplete' | 'current' => {
+    if (sectionId === currentSection) return 'current';
+    const result = validateSectionForSubmit(sectionId);
+    return result.valid ? 'complete' : 'incomplete';
+  };
+
   // Render Section 1 - Basic Details
   const renderSection1 = () => (
     <View style={styles.sectionContent}>
       <Text style={styles.sectionTitle}>Driver Basic Details</Text>
+      <Text style={styles.sectionHint}>Fill in your personal information</Text>
       
       <View style={styles.inputGroup}>
         <Text style={styles.inputLabel}>Full Name <Text style={styles.requiredStar}>*</Text></Text>
@@ -334,6 +414,7 @@ export default function DriverOnboardingForm() {
           onChangeText={setFullName}
           placeholder="Enter full name"
           placeholderTextColor={COLORS.textLight}
+          autoCorrect={false}
         />
       </View>
 
@@ -354,6 +435,7 @@ export default function DriverOnboardingForm() {
           onChangeText={setAddress}
           placeholder="Complete address"
           placeholderTextColor={COLORS.textLight}
+          multiline
         />
       </View>
 
@@ -450,6 +532,7 @@ export default function DriverOnboardingForm() {
   const renderSection4 = () => (
     <View style={styles.sectionContent}>
       <Text style={styles.sectionTitle}>Vehicle Details</Text>
+      <Text style={styles.sectionHint}>Enter your vehicle information</Text>
       <Text style={styles.inputLabel}>Vehicle Type *</Text>
       <View style={styles.vehicleTypeRow}>
         {['sedan', 'suv', 'crysta'].map((type) => (
@@ -558,7 +641,7 @@ export default function DriverOnboardingForm() {
       <Text style={styles.sectionHint}>Pay attachment fee to complete registration</Text>
       
       <View style={styles.paymentCard}>
-        <Text style={styles.paymentAmount}>₹500</Text>
+        <Text style={styles.paymentAmount}>Rs.500</Text>
         <Text style={styles.paymentNote}>One-time attachment fee (NON-REFUNDABLE)</Text>
       </View>
       
@@ -567,7 +650,7 @@ export default function DriverOnboardingForm() {
         <Text style={styles.upiId}>vkdrop@upi</Text>
         <Text style={styles.upiInstructions}>
           1. Open any UPI app (GPay, PhonePe, Paytm){'\n'}
-          2. Pay ₹500 to above UPI ID{'\n'}
+          2. Pay Rs.500 to above UPI ID{'\n'}
           3. Take screenshot of payment{'\n'}
           4. Upload screenshot below
         </Text>
@@ -586,56 +669,64 @@ export default function DriverOnboardingForm() {
   );
 
   // Render Section 8 - Submit
-  const renderSection8 = () => (
-    <View style={styles.sectionContent}>
-      <Text style={styles.sectionTitle}>Review & Submit</Text>
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Application Summary</Text>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Name:</Text>
-          <Text style={styles.summaryValue}>{fullName}</Text>
+  const renderSection8 = () => {
+    // Count completed items
+    const documentsCount = [aadhaarFront, aadhaarBack, licenseFront, licenseBack, rcFront, rcBack, insurance, permit, pollution].filter(Boolean).length;
+    const photosCount = [driverPhoto, driverWithVehicle, vehicleFront, vehicleBack, vehicleLeft, vehicleRight].filter(Boolean).length;
+    
+    return (
+      <View style={styles.sectionContent}>
+        <Text style={styles.sectionTitle}>Review & Submit</Text>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Application Summary</Text>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Name:</Text>
+            <Text style={styles.summaryValue}>{fullName || 'Not entered'}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Phone:</Text>
+            <Text style={styles.summaryValue}>{phone}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Vehicle:</Text>
+            <Text style={styles.summaryValue}>{vehicleType.toUpperCase()} - {vehicleNumber || 'Not entered'}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Documents:</Text>
+            <Text style={[styles.summaryValue, documentsCount < 9 && { color: COLORS.error }]}>
+              {documentsCount} / 9 uploaded
+            </Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Photos:</Text>
+            <Text style={[styles.summaryValue, photosCount < 6 && { color: COLORS.error }]}>
+              {photosCount} / 6 uploaded
+            </Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Payment:</Text>
+            <Text style={[styles.summaryValue, !paymentScreenshot && { color: COLORS.error }]}>
+              {paymentScreenshot ? 'Uploaded' : 'Not uploaded'}
+            </Text>
+          </View>
         </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Phone:</Text>
-          <Text style={styles.summaryValue}>{phone}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Vehicle:</Text>
-          <Text style={styles.summaryValue}>{vehicleType.toUpperCase()} - {vehicleNumber}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Documents:</Text>
-          <Text style={styles.summaryValue}>
-            {[aadhaarFront, aadhaarBack, licenseFront, licenseBack, rcFront, rcBack, insurance, permit, pollution].filter(Boolean).length} / 9 uploaded
-          </Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Photos:</Text>
-          <Text style={styles.summaryValue}>
-            {[driverPhoto, driverWithVehicle, vehicleFront, vehicleBack, vehicleLeft, vehicleRight].filter(Boolean).length} / 6 uploaded
-          </Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Payment:</Text>
-          <Text style={styles.summaryValue}>{paymentScreenshot ? '✅ Uploaded' : '❌ Not uploaded'}</Text>
-        </View>
+        <TouchableOpacity
+          style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+          onPress={handleSubmit}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={24} color="#fff" />
+              <Text style={styles.submitBtnText}>SUBMIT APPLICATION</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
-        onPress={handleSubmit}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Ionicons name="checkmark-circle" size={24} color="#fff" />
-            <Text style={styles.submitBtnText}>SUBMIT APPLICATION</Text>
-          </>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   // Render Section Content based on current section
   const renderSectionContent = () => {
@@ -668,16 +759,20 @@ export default function DriverOnboardingForm() {
 
       {/* Progress Steps */}
       <View style={styles.progressContainer}>
-        {SECTIONS.map((s) => (
-          <View
-            key={s.id}
-            style={[
-              styles.progressDot,
-              s.id < currentSection && styles.progressDotDone,
-              s.id === currentSection && styles.progressDotActive,
-            ]}
-          />
-        ))}
+        {SECTIONS.map((s) => {
+          const status = getSectionStatus(s.id);
+          return (
+            <TouchableOpacity
+              key={s.id}
+              onPress={() => setCurrentSection(s.id)}
+              style={[
+                styles.progressDot,
+                status === 'complete' && styles.progressDotDone,
+                status === 'current' && styles.progressDotActive,
+              ]}
+            />
+          );
+        })}
       </View>
 
       {/* Content */}
@@ -687,6 +782,7 @@ export default function DriverOnboardingForm() {
           contentContainerStyle={styles.scrollContent} 
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none"
         >
           {renderSectionContent()}
           <View style={{ height: 100 }} />
@@ -755,7 +851,7 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { padding: 16 },
   sectionContent: { backgroundColor: COLORS.card, borderRadius: 16, padding: 16 },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.text, marginBottom: 8 },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.text, marginBottom: 4 },
   sectionHint: { fontSize: 14, color: COLORS.textLight, marginBottom: 16 },
   inputGroup: { marginBottom: 16 },
   inputLabel: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 8 },
@@ -896,7 +992,17 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   successTitle: { fontSize: 26, fontWeight: 'bold', color: COLORS.text, marginBottom: 12 },
-  successMessage: { fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 24 },
+  successMessage: { fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 16 },
+  driverIdBox: {
+    backgroundColor: COLORS.card,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  driverIdLabel: { fontSize: 12, color: COLORS.textLight, marginBottom: 4 },
+  driverIdValue: { fontSize: 20, fontWeight: 'bold', color: COLORS.secondary },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',

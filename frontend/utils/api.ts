@@ -4,10 +4,12 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000, // 2 minutes timeout for large image uploads
   headers: {
     'Content-Type': 'application/json',
   },
+  maxContentLength: 50 * 1024 * 1024, // 50MB max
+  maxBodyLength: 50 * 1024 * 1024, // 50MB max
 });
 
 // Auth APIs

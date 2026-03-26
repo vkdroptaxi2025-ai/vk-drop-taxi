@@ -846,37 +846,47 @@ export default function AdminDashboard() {
                   )}
                 </View>
 
-                {/* Action Buttons */}
+                {/* Action Buttons for PENDING Drivers */}
                 {selectedDriver.approval_status === 'pending' && (
-                  <View style={styles.actionButtons}>
+                  <>
+                    <View style={styles.actionButtons}>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.approveBtn]}
+                        onPress={() => handleApproveDriver(selectedDriver.driver_id, 'approved')}
+                      >
+                        <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                        <Text style={styles.actionBtnText}>APPROVE</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.rejectBtn]}
+                        onPress={() => {
+                          Alert.alert(
+                            'Reject Driver',
+                            'Are you sure you want to reject this driver?',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { 
+                                text: 'Reject', 
+                                style: 'destructive',
+                                onPress: () => handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Documents not verified')
+                              }
+                            ]
+                          );
+                        }}
+                      >
+                        <Ionicons name="close-circle" size={24} color="#fff" />
+                        <Text style={styles.actionBtnText}>REJECT</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {/* Delete PENDING Driver */}
                     <TouchableOpacity
-                      style={[styles.actionBtn, styles.approveBtn]}
-                      onPress={() => handleApproveDriver(selectedDriver.driver_id, 'approved')}
+                      style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
+                      onPress={() => handleDeleteDriver(selectedDriver.driver_id)}
                     >
-                      <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                      <Text style={styles.actionBtnText}>APPROVE</Text>
+                      <Ionicons name="trash" size={24} color="#fff" />
+                      <Text style={styles.actionBtnText}>DELETE PENDING DRIVER</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.rejectBtn]}
-                      onPress={() => {
-                        Alert.alert(
-                          'Reject Driver',
-                          'Are you sure you want to reject this driver?',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { 
-                              text: 'Reject', 
-                              style: 'destructive',
-                              onPress: () => handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Documents not verified')
-                            }
-                          ]
-                        );
-                      }}
-                    >
-                      <Ionicons name="close-circle" size={24} color="#fff" />
-                      <Text style={styles.actionBtnText}>REJECT</Text>
-                    </TouchableOpacity>
-                  </View>
+                  </>
                 )}
 
                 {/* Add Balance Button for Approved Drivers */}
