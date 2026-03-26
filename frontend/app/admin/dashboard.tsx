@@ -136,16 +136,31 @@ export default function AdminDashboard() {
           style: status === 'rejected' ? 'destructive' : 'default',
           onPress: async () => {
             try {
-              console.log('[Admin] Calling approveDriver API...');
+              console.log('[Admin] Calling approveDriver API for:', driverId);
+              setLoading(true);
               const response = await approveDriver(driverId, status, rejectionReason);
               console.log('[Admin] Approve response:', response.data);
-              Alert.alert('Success', `Driver ${status} successfully!`);
+              setLoading(false);
+              
+              // Close modal first
               setSelectedDriver(null);
-              fetchDrivers();
-              fetchStats();
+              
+              // Show success message
+              Alert.alert(
+                'Success!', 
+                `Driver ${status === 'approved' ? 'approved' : 'rejected'} successfully!`,
+                [{ text: 'OK', onPress: () => {
+                  // Refresh data after alert is dismissed
+                  fetchDrivers();
+                  fetchStats();
+                }}]
+              );
             } catch (error: any) {
-              console.error('[Admin] Approve error:', error.response?.data || error.message);
-              Alert.alert('Error', error.response?.data?.detail || 'Failed to update driver status');
+              setLoading(false);
+              console.error('[Admin] Approve error:', error);
+              const errorMessage = error.response?.data?.detail || error.message || 'Failed to update driver status';
+              Alert.alert('Error', errorMessage);
+              // Don't close modal on error so user can try again
             }
           }
         }

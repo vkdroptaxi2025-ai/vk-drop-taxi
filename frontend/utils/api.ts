@@ -81,12 +81,25 @@ export const withdrawMoney = (driverId: string, amount: number) =>
 export const getAllDrivers = () =>
   api.get('/api/admin/drivers');
 
-export const approveDriver = (driverId: string, status: string, rejectionReason?: string) =>
-  api.put('/api/admin/driver/approve', { 
+export const approveDriver = async (driverId: string, status: string, rejectionReason?: string) => {
+  const payload = { 
     driver_id: driverId, 
     approval_status: status,
     rejection_reason: rejectionReason 
-  });
+  };
+  
+  try {
+    // Try the new endpoint first
+    return await api.put('/api/admin/driver/approve', payload);
+  } catch (error: any) {
+    // If 404, try the legacy endpoint
+    if (error.response?.status === 404) {
+      console.log('[API] Trying legacy approve-driver endpoint...');
+      return await api.put('/api/admin/approve-driver', payload);
+    }
+    throw error;
+  }
+};
 
 export const resetDriverStatus = (driverId: string) =>
   api.put(`/api/admin/driver/reset/${driverId}`);
