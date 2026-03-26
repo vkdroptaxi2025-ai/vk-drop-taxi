@@ -86,6 +86,12 @@ export const approveDriver = (driverId: string, status: string, rejectionReason?
     rejection_reason: rejectionReason 
   });
 
+export const resetDriverStatus = (driverId: string) =>
+  api.put(`/api/admin/driver/reset/${driverId}`);
+
+export const deleteDriver = (driverId: string) =>
+  api.delete(`/api/admin/driver/${driverId}`);
+
 export const getAllCustomers = () =>
   api.get('/api/admin/customers');
 

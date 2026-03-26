@@ -15,6 +15,8 @@ import { Colors } from '../../utils/colors';
 import {
   getAllDrivers,
   approveDriver,
+  resetDriverStatus,
+  deleteDriver,
   getAllCustomers,
   getAllBookings,
   getAdminStats,
@@ -159,6 +161,56 @@ export default function AdminDashboard() {
     setWalletDriverName(driverName);
     setWalletAmount('');
     setShowWalletModal(true);
+  };
+
+  // Reset Driver Status Handler
+  const handleResetDriver = async (driverId: string) => {
+    Alert.alert(
+      'Reset Driver',
+      'This will change driver status from APPROVED back to PENDING. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          onPress: async () => {
+            try {
+              await resetDriverStatus(driverId);
+              Alert.alert('Success', 'Driver status reset to PENDING');
+              setSelectedDriver(null);
+              fetchDrivers();
+            } catch (error: any) {
+              Alert.alert('Error', error.response?.data?.detail || 'Failed to reset driver');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Delete Driver Handler
+  const handleDeleteDriver = async (driverId: string) => {
+    Alert.alert(
+      'Delete Driver',
+      'This will permanently delete the driver. This action cannot be undone. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDriver(driverId);
+              Alert.alert('Success', 'Driver deleted successfully');
+              setSelectedDriver(null);
+              fetchDrivers();
+              fetchStats();
+            } catch (error: any) {
+              Alert.alert('Error', error.response?.data?.detail || 'Failed to delete driver');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleManualAssignment = async () => {
@@ -829,20 +881,51 @@ export default function AdminDashboard() {
 
                 {/* Add Balance Button for Approved Drivers */}
                 {selectedDriver.approval_status === 'approved' && (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: Colors.secondary, marginTop: 16 }]}
+                      onPress={() => {
+                        setSelectedDriver(null);
+                        openWalletModal(
+                          selectedDriver.driver_id,
+                          selectedDriver.full_name || selectedDriver.personal_details?.full_name || 'Driver'
+                        );
+                      }}
+                    >
+                      <Ionicons name="wallet" size={24} color="#fff" />
+                      <Text style={styles.actionBtnText}>ADD WALLET BALANCE</Text>
+                    </TouchableOpacity>
+
+                    {/* Reset Status Button */}
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#FF9800', marginTop: 12 }]}
+                      onPress={() => handleResetDriver(selectedDriver.driver_id)}
+                    >
+                      <Ionicons name="refresh" size={24} color="#fff" />
+                      <Text style={styles.actionBtnText}>RESET TO PENDING</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* Reject Approved Driver */}
+                {selectedDriver.approval_status === 'approved' && (
                   <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: Colors.secondary, marginTop: 16 }]}
-                    onPress={() => {
-                      setSelectedDriver(null);
-                      openWalletModal(
-                        selectedDriver.driver_id,
-                        selectedDriver.full_name || selectedDriver.personal_details?.full_name || 'Driver'
-                      );
-                    }}
+                    style={[styles.actionBtn, styles.rejectBtn, { marginTop: 12 }]}
+                    onPress={() => handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Approval revoked by admin')}
                   >
-                    <Ionicons name="wallet" size={24} color="#fff" />
-                    <Text style={styles.actionBtnText}>ADD WALLET BALANCE</Text>
+                    <Ionicons name="close-circle" size={24} color="#fff" />
+                    <Text style={styles.actionBtnText}>REVOKE APPROVAL</Text>
                   </TouchableOpacity>
                 )}
+
+                {/* Delete Driver Button - Always visible */}
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
+                  onPress={() => handleDeleteDriver(selectedDriver.driver_id)}
+                >
+                  <Ionicons name="trash" size={24} color="#fff" />
+                  <Text style={styles.actionBtnText}>DELETE DRIVER</Text>
+                </TouchableOpacity>
 
                 <View style={{ height: 20 }} />
               </ScrollView>

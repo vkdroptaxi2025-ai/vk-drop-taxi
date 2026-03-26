@@ -988,6 +988,52 @@ async def approve_driver(approval: DriverApproval):
         "driver_id": approval.driver_id
     }
 
+@api_router.put("/admin/driver/reset/{driver_id}")
+async def reset_driver_status(driver_id: str):
+    """Reset driver status from APPROVED back to PENDING"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    await db.drivers.update_one(
+        {"driver_id": driver_id},
+        {
+            "$set": {
+                "approval_status": "pending",
+                "rejection_reason": None,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return {
+        "success": True,
+        "message": "Driver status reset to PENDING",
+        "driver_id": driver_id
+    }
+
+@api_router.delete("/admin/driver/{driver_id}")
+async def delete_driver(driver_id: str):
+    """Delete driver completely from the system"""
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    # Delete driver
+    await db.drivers.delete_one({"driver_id": driver_id})
+    
+    # Delete driver's wallet
+    await db.wallets.delete_one({"user_id": driver_id})
+    
+    # Delete driver's bookings (optional - keep for records)
+    # await db.bookings.delete_many({"driver_id": driver_id})
+    
+    return {
+        "success": True,
+        "message": "Driver deleted successfully",
+        "driver_id": driver_id
+    }
+
 # ==================== LEGACY DRIVER ENDPOINTS (keeping for compatibility) ====================
 @api_router.post("/driver/register")
 async def register_driver_legacy(driver: DriverRegister):
