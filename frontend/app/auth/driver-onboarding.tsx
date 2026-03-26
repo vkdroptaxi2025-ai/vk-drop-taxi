@@ -276,6 +276,9 @@ export default function DriverOnboardingForm() {
     setLoading(true);
     console.log('[Submit] Starting driver registration submission...');
     
+    // Show progress alert
+    Alert.alert('Submitting...', 'Please wait while we submit your application. This may take up to 30 seconds.');
+    
     try {
       const data = {
         basic_details: {
@@ -323,8 +326,11 @@ export default function DriverOnboardingForm() {
       };
 
       console.log('[Submit] Calling onboardDriver API...');
+      console.log('[Submit] Phone:', phone);
+      console.log('[Submit] Name:', fullName);
+      
       const response = await onboardDriver(data);
-      console.log('[Submit] API Response:', response.data);
+      console.log('[Submit] API Response received:', JSON.stringify(response.data));
       
       if (response.data.success) {
         setDriverId(response.data.driver_id);
@@ -335,29 +341,36 @@ export default function DriverOnboardingForm() {
           phone: phone as string,
           name: fullName,
           role: 'driver',
-          approval_status: 'pending',
+          approval_status: response.data.approval_status || 'pending',
         });
         console.log('[Submit] SUCCESS - Driver registered with ID:', response.data.driver_id);
-        Alert.alert('Success!', `Your application has been submitted!\nDriver ID: ${response.data.driver_id}`);
+        
+        // Only show success if not already showing success screen
+        if (!response.data.existing) {
+          Alert.alert('Success!', `Your application has been submitted!\nDriver ID: ${response.data.driver_id}`);
+        }
       } else {
-        console.error('[Submit] API returned success=false');
-        Alert.alert('Submission Failed', 'Please try again. If the problem persists, contact support.');
+        console.error('[Submit] API returned success=false:', response.data);
+        setLoading(false);
+        Alert.alert('Submission Failed', response.data.message || 'Please try again. If the problem persists, contact support.');
       }
     } catch (error: any) {
-      console.error('[Submit] ERROR:', error);
+      console.error('[Submit] ERROR:', error.message);
+      console.error('[Submit] ERROR Details:', JSON.stringify(error.response?.data || {}));
+      setLoading(false);
       
       // Handle different error types
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
         Alert.alert(
           'Connection Timeout',
-          'The server is taking too long to respond. Please check your internet connection and try again.',
+          'The server is taking too long to respond. This could be due to slow internet or large file size.\n\nPlease try again.',
           [{ text: 'Retry', onPress: handleSubmit }, { text: 'Cancel', style: 'cancel' }]
         );
       } else if (error.code === 'ERR_NETWORK' || !error.response) {
         Alert.alert(
           'Connection Error',
-          'Unable to connect to server. Please check your internet connection and try again.\n\nIf you see a "Wake up servers" page, please click it and wait for servers to start, then try again.',
-          [{ text: 'OK' }]
+          'Unable to connect to server.\n\n1. Check your internet connection\n2. If you see "Wake up servers" page, click it and wait 3 minutes\n3. Then try again',
+          [{ text: 'Retry', onPress: handleSubmit }, { text: 'Cancel', style: 'cancel' }]
         );
       } else if (error.response?.status === 500) {
         Alert.alert(
@@ -365,15 +378,20 @@ export default function DriverOnboardingForm() {
           'The server encountered an error. Please try again in a moment.',
           [{ text: 'Retry', onPress: handleSubmit }, { text: 'Cancel', style: 'cancel' }]
         );
+      } else if (error.response?.status === 400) {
+        // Driver might already exist
+        Alert.alert(
+          'Registration Issue',
+          error.response?.data?.detail || 'This phone number may already be registered. Please login instead.',
+          [{ text: 'OK' }]
+        );
       } else {
         Alert.alert(
           'Registration Failed',
           error.response?.data?.detail || 'An unexpected error occurred. Please try again.',
-          [{ text: 'OK' }]
+          [{ text: 'Retry', onPress: handleSubmit }, { text: 'Cancel', style: 'cancel' }]
         );
       }
-    } finally {
-      setLoading(false);
     }
   };
 

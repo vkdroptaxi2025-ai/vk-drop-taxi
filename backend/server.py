@@ -769,13 +769,25 @@ async def onboard_driver_comprehensive(data: ComprehensiveDriverOnboarding):
     Complete driver onboarding with all details and documents.
     Creates a new driver with PENDING status and branded ID (VKDRV1001, etc.)
     """
+    print(f"[Onboard] Starting driver registration for phone: {data.basic_details.phone}")
+    
     # Check if driver already exists
     existing = await db.drivers.find_one({"phone": data.basic_details.phone})
     if existing:
-        raise HTTPException(status_code=400, detail="Driver with this phone already exists")
+        print(f"[Onboard] Driver already exists with ID: {existing.get('driver_id')}")
+        # Return existing driver info instead of error
+        return {
+            "success": True,
+            "driver_id": existing.get('driver_id'),
+            "message": "Driver already registered. Redirecting to status page.",
+            "approval_status": existing.get('approval_status', 'pending'),
+            "existing": True
+        }
     
+    print(f"[Onboard] Generating new driver ID...")
     # Generate branded driver ID (VKDRV1001, VKDRV1002, etc.)
     driver_id = await generate_driver_id()
+    print(f"[Onboard] Generated driver ID: {driver_id}")
     
     # Normalize vehicle type
     vehicle_type = data.vehicle_details.vehicle_type.lower()
@@ -848,9 +860,12 @@ async def onboard_driver_comprehensive(data: ComprehensiveDriverOnboarding):
         "updated_at": datetime.utcnow()
     }
     
+    print(f"[Onboard] Inserting driver document into database...")
     await db.drivers.insert_one(driver_document)
+    print(f"[Onboard] Driver inserted successfully")
     
     # Create wallet for driver
+    print(f"[Onboard] Creating wallet for driver...")
     wallet_data = {
         "user_id": driver_id,
         "balance": 0.0,
@@ -858,7 +873,9 @@ async def onboard_driver_comprehensive(data: ComprehensiveDriverOnboarding):
         "minimum_balance_required": 1000.0
     }
     await db.wallets.insert_one(wallet_data)
+    print(f"[Onboard] Wallet created successfully")
     
+    print(f"[Onboard] SUCCESS - Driver {driver_id} registered with phone {data.basic_details.phone}")
     return {
         "success": True,
         "driver_id": driver_id,
