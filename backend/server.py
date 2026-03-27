@@ -973,10 +973,11 @@ async def get_driver_status(driver_id: str):
 # ==================== ADMIN KYC VERIFICATION ENDPOINTS ====================
 @api_router.get("/admin/drivers/pending-verification")
 async def get_pending_drivers():
-    """Get all drivers awaiting verification"""
-    drivers = await db.drivers.find({
-        "approval_status": DriverApprovalStatus.PENDING.value
-    }).sort("created_at", -1).to_list(100)
+    """Get all drivers awaiting verification - excludes large image fields"""
+    drivers = await db.drivers.find(
+        {"approval_status": DriverApprovalStatus.PENDING.value},
+        DRIVER_LIST_PROJECTION  # Exclude base64 images for performance
+    ).sort("created_at", -1).to_list(100)
     
     for driver in drivers:
         driver['_id'] = str(driver['_id'])
@@ -1194,12 +1195,15 @@ async def create_booking(booking: BookingCreate):
     distance = calculate_mock_distance(booking.pickup, booking.drop)
     fare = await calculate_fare(distance, booking.vehicle_type)
     
-    # Find available driver
-    driver = await db.drivers.find_one({
-        "vehicle_details.vehicle_type": booking.vehicle_type.value,
-        "is_online": True,
-        "approval_status": DriverApprovalStatus.APPROVED.value
-    })
+    # Find available driver - only fetch needed fields, exclude images
+    driver = await db.drivers.find_one(
+        {
+            "vehicle_details.vehicle_type": booking.vehicle_type.value,
+            "is_online": True,
+            "approval_status": DriverApprovalStatus.APPROVED.value
+        },
+        DRIVER_LIST_PROJECTION  # Exclude base64 images
+    )
     
     if not driver:
         raise HTTPException(status_code=404, detail="No drivers available")
@@ -1362,13 +1366,15 @@ async def withdraw_money(request: WithdrawRequest):
 # Projection to exclude large base64 image fields from queries
 # This excludes both nested document fields and flat image fields
 DRIVER_LIST_PROJECTION = {
-    # Nested document fields
+    # Nested document fields that contain images
     "driver_photos": 0,
     "driver_documents": 0,
     "vehicle_documents": 0,
     "vehicle_photos": 0,
     "documents": 0,
     "payment": 0,
+    # Nested personal_details field with image
+    "personal_details.driver_photo": 0,
     # Flat image fields (for backward compatibility with old data)
     "driver_photo": 0,
     "driver_with_vehicle_photo": 0,
@@ -1386,6 +1392,15 @@ DRIVER_LIST_PROJECTION = {
     "vehicle_left_photo": 0,
     "vehicle_right_photo": 0,
     "payment_screenshot": 0,
+    # Legacy fields
+    "license_image": 0,
+    "rc_image": 0,
+    "driving_license_image": 0,
+    "rc_book_image": 0,
+    "insurance_image": 0,
+    "driver_vehicle_photo": 0,
+    "agreement.agreement_file": 0,
+    "agreement.signed_document": 0,
 }
 
 @api_router.get("/admin/drivers")
@@ -1614,8 +1629,11 @@ async def create_smart_booking(booking: SmartBookingCreate):
     selected_driver = None
     
     if booking.assignment_mode == "manual" and booking.manual_driver_id:
-        # Manual assignment
-        selected_driver = await db.drivers.find_one({"driver_id": booking.manual_driver_id})
+        # Manual assignment - exclude base64 images
+        selected_driver = await db.drivers.find_one(
+            {"driver_id": booking.manual_driver_id},
+            DRIVER_LIST_PROJECTION
+        )
         if not selected_driver:
             raise HTTPException(status_code=404, detail="Driver not found")
         
@@ -1877,15 +1895,27 @@ async def complete_trip(booking_id: str):
 @api_router.get("/driver/{driver_id}/queue-status")
 async def get_queue_status(driver_id: str):
     """Get driver's queue status and position"""
-    driver = await db.drivers.find_one({"driver_id": driver_id})
+    # Only fetch the fields needed for queue status calculation
+    queue_status_projection = {
+        "driver_id": 1,
+        "in_queue": 1,
+        "continuous_trips_count": 1,
+        "personal_details.full_name": 1,
+        "name": 1,
+        "queue_joined_at": 1,
+        "completed_trips": 1,
+        "rating": 1,
+        "_id": 0
+    }
+    driver = await db.drivers.find_one({"driver_id": driver_id}, queue_status_projection)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     
-    # Get all drivers in queue
-    queue_drivers = await db.drivers.find({
-        "in_queue": True,
-        "duty_on": True
-    }).to_list(1000)
+    # Get all drivers in queue - only fields needed for priority calculation
+    queue_drivers = await db.drivers.find(
+        {"in_queue": True, "duty_on": True},
+        queue_status_projection
+    ).to_list(1000)
     
     # Calculate priorities
     driver_priorities = []
