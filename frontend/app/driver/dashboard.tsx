@@ -71,11 +71,18 @@ export default function DriverDashboard() {
       setDriverData(driver);
       setIsOnline(driver?.duty_on || driver?.is_online || false);
       
-      // Update auth store
-      setUser({
-        ...user,
-        ...driver,
+      // Update auth store with ONLY minimal data (no images/documents)
+      // This prevents AsyncStorage quota exceeded error
+      await setUser({
+        driver_id: driver.driver_id || driverId,
+        phone: driver.phone || user?.phone || '',
+        name: driver.full_name || driver.personal_details?.full_name || user?.name || 'Driver',
+        role: 'driver',
         approval_status: driver.approval_status,
+        is_online: driver.is_online || driver.duty_on || false,
+        vehicle_type: driver.vehicle_type || driver.vehicle_details?.vehicle_type,
+        vehicle_number: driver.vehicle_number || driver.vehicle_details?.vehicle_number,
+        earnings: driver.earnings || 0,
       });
 
       // Get wallet balance
