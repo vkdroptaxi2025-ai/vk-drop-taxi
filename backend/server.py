@@ -1411,6 +1411,19 @@ async def get_all_drivers():
         driver['_id'] = str(driver['_id'])
     return {"success": True, "drivers": drivers}
 
+@api_router.get("/admin/driver/{driver_id}/full")
+async def get_driver_full_details(driver_id: str):
+    """
+    Get FULL driver details INCLUDING all documents for admin verification.
+    This returns base64 images - use only when viewing individual driver details.
+    """
+    driver = await db.drivers.find_one({"driver_id": driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    driver['_id'] = str(driver['_id'])
+    return {"success": True, "driver": driver}
+
 @api_router.get("/admin/customers")
 async def get_all_customers():
     """Get all customers"""

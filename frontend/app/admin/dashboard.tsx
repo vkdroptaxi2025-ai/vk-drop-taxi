@@ -9,11 +9,13 @@ import {
   Modal,
   Image,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../utils/colors';
 import {
   getAllDrivers,
+  getDriverFullDetails,
   approveDriver,
   resetDriverStatus,
   deleteDriver,
@@ -41,6 +43,8 @@ export default function AdminDashboard() {
   const [selectedDriver, setSelectedDriver] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingDriverDetails, setLoadingDriverDetails] = useState(false);
+  const [fullDriverDetails, setFullDriverDetails] = useState<any>(null);
 
   // Manual Assignment State
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -302,6 +306,30 @@ export default function AdminDashboard() {
     );
   };
 
+  // Fetch full driver details when selecting a driver
+  const handleSelectDriver = async (driver: any) => {
+    setSelectedDriver(driver); // Show basic info immediately
+    setFullDriverDetails(null);
+    setLoadingDriverDetails(true);
+    
+    try {
+      const response = await getDriverFullDetails(driver.driver_id);
+      if (response.data.success) {
+        setFullDriverDetails(response.data.driver);
+      }
+    } catch (error) {
+      console.error('Failed to fetch full driver details:', error);
+      // Keep showing basic driver info even if full fetch fails
+    } finally {
+      setLoadingDriverDetails(false);
+    }
+  };
+
+  // Helper to get driver name
+  const getDriverName = (driver: any) => {
+    return driver?.full_name || driver?.personal_details?.full_name || driver?.name || 'Unknown';
+  };
+
   const renderStats = () => (
     <View style={styles.statsContainer}>
       <View style={styles.statRow}>
@@ -367,7 +395,7 @@ export default function AdminDashboard() {
           <View style={styles.listItemHeader}>
             <View>
               <Text style={styles.listItemTitle}>
-                {driver.personal_details?.full_name || driver.name}
+                {getDriverName(driver)}
               </Text>
               <Text style={styles.listItemSubtitle}>{driver.phone}</Text>
             </View>
@@ -376,8 +404,7 @@ export default function AdminDashboard() {
             </View>
           </View>
           <Text style={styles.listItemDetails}>
-            {(driver.vehicle_details?.vehicle_type || driver.vehicle_type || '').toUpperCase()} •{' '}
-            {driver.vehicle_details?.vehicle_number || driver.vehicle_number}
+            {(driver.vehicle_type || '').toUpperCase()} • {driver.vehicle_number || 'N/A'}
           </Text>
         </View>
       ))}
@@ -388,14 +415,15 @@ export default function AdminDashboard() {
         <TouchableOpacity
           key={driver.driver_id}
           style={styles.listItem}
-          onPress={() => setSelectedDriver(driver)}
+          onPress={() => handleSelectDriver(driver)}
         >
           <View style={styles.listItemHeader}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.listItemTitle}>
-                {driver.personal_details?.full_name || driver.name}
+                {getDriverName(driver)}
               </Text>
               <Text style={styles.listItemSubtitle}>{driver.phone}</Text>
+              <Text style={styles.driverIdText}>ID: {driver.driver_id}</Text>
             </View>
             <View
               style={[
@@ -414,9 +442,13 @@ export default function AdminDashboard() {
             </View>
           </View>
           <Text style={styles.listItemDetails}>
-            {(driver.vehicle_details?.vehicle_type || driver.vehicle_type || '').toUpperCase()} •{' '}
-            {driver.vehicle_details?.vehicle_number || driver.vehicle_number}
+            {(driver.vehicle_type || '').toUpperCase()} • {driver.vehicle_number || 'N/A'}
           </Text>
+          {driver.address && (
+            <Text style={styles.addressText} numberOfLines={1}>
+              {driver.address}
+            </Text>
+          )}
         </TouchableOpacity>
       ))}
     </ScrollView>
@@ -531,11 +563,10 @@ export default function AdminDashboard() {
                 <View style={[styles.onlineIndicator, { backgroundColor: Colors.success }]} />
                 <View>
                   <Text style={styles.driverName}>
-                    {driver.personal_details?.full_name || driver.name}
+                    {getDriverName(driver)}
                   </Text>
                   <Text style={styles.driverVehicle}>
-                    {(driver.vehicle_details?.vehicle_type || driver.vehicle_type || '').toUpperCase()} •{' '}
-                    {driver.vehicle_details?.vehicle_number || driver.vehicle_number}
+                    {(driver.vehicle_type || '').toUpperCase()} • {driver.vehicle_number || 'N/A'}
                   </Text>
                 </View>
               </View>
@@ -717,9 +748,7 @@ export default function AdminDashboard() {
                       {getAvailableDrivers().map((d) => (
                         <Picker.Item
                           key={d.driver_id}
-                          label={`${d.personal_details?.full_name || d.name} (${
-                            d.vehicle_details?.vehicle_number || d.vehicle_number
-                          })`}
+                          label={`${getDriverName(d)} (${d.vehicle_number || 'N/A'})`}
                           value={d.driver_id}
                         />
                       ))}
@@ -745,248 +774,411 @@ export default function AdminDashboard() {
         visible={!!selectedDriver}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setSelectedDriver(null)}
+        onRequestClose={() => {
+          setSelectedDriver(null);
+          setFullDriverDetails(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Driver Details</Text>
-              <TouchableOpacity onPress={() => setSelectedDriver(null)}>
+              <TouchableOpacity onPress={() => {
+                setSelectedDriver(null);
+                setFullDriverDetails(null);
+              }}>
                 <Ionicons name="close" size={28} color={Colors.text} />
               </TouchableOpacity>
             </View>
 
             {selectedDriver && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Basic Info */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Basic Information</Text>
+                {/* Use full details if available, otherwise fall back to basic */}
+                {(() => {
+                  const driver = fullDriverDetails || selectedDriver;
+                  const driverName = getDriverName(driver);
                   
-                  <View style={styles.driverInfo}>
-                    <Text style={styles.infoLabel}>Name</Text>
-                    <Text style={styles.infoValue}>
-                      {selectedDriver.full_name || selectedDriver.personal_details?.full_name || selectedDriver.name || 'N/A'}
-                    </Text>
-                  </View>
+                  return (
+                    <>
+                      {/* Basic Info */}
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailSectionTitle}>Basic Information</Text>
+                        
+                        {/* Driver Photo */}
+                        {loadingDriverDetails ? (
+                          <View style={styles.photoPlaceholder}>
+                            <Text style={styles.photoPlaceholderText}>Loading photo...</Text>
+                          </View>
+                        ) : (driver.driver_photos?.driver_photo || driver.driver_photo) ? (
+                          <View style={styles.driverPhotoContainer}>
+                            <Image 
+                              source={{ uri: driver.driver_photos?.driver_photo || driver.driver_photo }}
+                              style={styles.driverPhoto}
+                              resizeMode="cover"
+                            />
+                          </View>
+                        ) : null}
+                        
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Driver ID</Text>
+                          <Text style={styles.infoValue}>{driver.driver_id}</Text>
+                        </View>
 
-                  <View style={styles.driverInfo}>
-                    <Text style={styles.infoLabel}>Phone</Text>
-                    <Text style={styles.infoValue}>{selectedDriver.phone}</Text>
-                  </View>
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Name</Text>
+                          <Text style={styles.infoValue}>{driverName}</Text>
+                        </View>
 
-                  <View style={styles.driverInfo}>
-                    <Text style={styles.infoLabel}>Address</Text>
-                    <Text style={styles.infoValue}>
-                      {selectedDriver.address || selectedDriver.personal_details?.full_address || 'N/A'}
-                    </Text>
-                  </View>
-                </View>
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Phone</Text>
+                          <Text style={styles.infoValue}>{driver.phone}</Text>
+                        </View>
 
-                {/* Vehicle Info */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Vehicle Details</Text>
-                  
-                  <View style={styles.driverInfo}>
-                    <Text style={styles.infoLabel}>Vehicle Type</Text>
-                    <Text style={styles.infoValue}>
-                      {(selectedDriver.vehicle_type || selectedDriver.vehicle_details?.vehicle_type || 'N/A').toUpperCase()}
-                    </Text>
-                  </View>
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Address</Text>
+                          <Text style={styles.infoValue}>{driver.address || 'N/A'}</Text>
+                        </View>
 
-                  <View style={styles.driverInfo}>
-                    <Text style={styles.infoLabel}>Vehicle Number</Text>
-                    <Text style={styles.infoValue}>
-                      {selectedDriver.vehicle_number || selectedDriver.vehicle_details?.vehicle_number || 'N/A'}
-                    </Text>
-                  </View>
-                </View>
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Aadhaar Number</Text>
+                          <Text style={styles.infoValue}>{driver.aadhaar_number || 'N/A'}</Text>
+                        </View>
 
-                {/* Documents Section */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Documents</Text>
-                  
-                  {/* Driving License */}
-                  {(selectedDriver.driving_license_image || selectedDriver.documents?.license_front) && (
-                    <View style={styles.documentItem}>
-                      <Text style={styles.documentLabel}>Driving License</Text>
-                      <Image 
-                        source={{ uri: selectedDriver.driving_license_image || selectedDriver.documents?.license_front }}
-                        style={styles.documentImage}
-                        resizeMode="contain"
-                      />
-                      {selectedDriver.driving_license_number && (
-                        <Text style={styles.documentNumber}>
-                          License No: {selectedDriver.driving_license_number}
-                        </Text>
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Driving License</Text>
+                          <Text style={styles.infoValue}>{driver.driving_license_number || 'N/A'}</Text>
+                        </View>
+
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Experience</Text>
+                          <Text style={styles.infoValue}>{driver.driving_experience_years || 0} years</Text>
+                        </View>
+                      </View>
+
+                      {/* Vehicle Info */}
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailSectionTitle}>Vehicle Details</Text>
+                        
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Vehicle Type</Text>
+                          <Text style={styles.infoValue}>{(driver.vehicle_type || 'N/A').toUpperCase()}</Text>
+                        </View>
+
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Vehicle Number</Text>
+                          <Text style={styles.infoValue}>{driver.vehicle_number || 'N/A'}</Text>
+                        </View>
+
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Vehicle Model</Text>
+                          <Text style={styles.infoValue}>{driver.vehicle_model || 'N/A'}</Text>
+                        </View>
+
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Vehicle Year</Text>
+                          <Text style={styles.infoValue}>{driver.vehicle_year || 'N/A'}</Text>
+                        </View>
+                      </View>
+
+                      {/* Documents Section */}
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailSectionTitle}>Documents</Text>
+                        
+                        {loadingDriverDetails ? (
+                          <View style={styles.documentLoading}>
+                            <Text style={styles.documentLoadingText}>Loading documents...</Text>
+                          </View>
+                        ) : (
+                          <>
+                            {/* Aadhaar */}
+                            {(driver.driver_documents?.aadhaar_front || driver.aadhaar_front) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Aadhaar Front</Text>
+                                <Image 
+                                  source={{ uri: driver.driver_documents?.aadhaar_front || driver.aadhaar_front }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {(driver.driver_documents?.aadhaar_back || driver.aadhaar_back) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Aadhaar Back</Text>
+                                <Image 
+                                  source={{ uri: driver.driver_documents?.aadhaar_back || driver.aadhaar_back }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {/* License */}
+                            {(driver.driver_documents?.license_front || driver.license_front) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>License Front</Text>
+                                <Image 
+                                  source={{ uri: driver.driver_documents?.license_front || driver.license_front }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {(driver.driver_documents?.license_back || driver.license_back) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>License Back</Text>
+                                <Image 
+                                  source={{ uri: driver.driver_documents?.license_back || driver.license_back }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {/* Vehicle Documents */}
+                            {(driver.vehicle_documents?.rc_front || driver.rc_front) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>RC Book Front</Text>
+                                <Image 
+                                  source={{ uri: driver.vehicle_documents?.rc_front || driver.rc_front }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {(driver.vehicle_documents?.rc_back || driver.rc_back) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>RC Book Back</Text>
+                                <Image 
+                                  source={{ uri: driver.vehicle_documents?.rc_back || driver.rc_back }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {(driver.vehicle_documents?.insurance || driver.insurance) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Insurance</Text>
+                                <Image 
+                                  source={{ uri: driver.vehicle_documents?.insurance || driver.insurance }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {(driver.vehicle_documents?.permit || driver.permit) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Permit</Text>
+                                <Image 
+                                  source={{ uri: driver.vehicle_documents?.permit || driver.permit }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {(driver.vehicle_documents?.pollution_certificate || driver.pollution_certificate) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Pollution Certificate</Text>
+                                <Image 
+                                  source={{ uri: driver.vehicle_documents?.pollution_certificate || driver.pollution_certificate }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {/* Vehicle Photos */}
+                            {(driver.vehicle_photos?.front_photo || driver.vehicle_front_photo) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Vehicle Front</Text>
+                                <Image 
+                                  source={{ uri: driver.vehicle_photos?.front_photo || driver.vehicle_front_photo }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {(driver.vehicle_photos?.back_photo || driver.vehicle_back_photo) && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Vehicle Back</Text>
+                                <Image 
+                                  source={{ uri: driver.vehicle_photos?.back_photo || driver.vehicle_back_photo }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {/* Payment Screenshot */}
+                            {driver.payment?.screenshot && (
+                              <View style={styles.documentItem}>
+                                <Text style={styles.documentLabel}>Payment Screenshot (₹{driver.payment.amount || 500})</Text>
+                                <Image 
+                                  source={{ uri: driver.payment.screenshot }}
+                                  style={styles.documentImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            )}
+
+                            {!fullDriverDetails && !loadingDriverDetails && (
+                              <Text style={styles.noDocumentsText}>
+                                Documents will load when viewing driver details
+                              </Text>
+                            )}
+                          </>
+                        )}
+                      </View>
+
+                      {/* Status */}
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailSectionTitle}>Status</Text>
+                        
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Approval Status</Text>
+                          <View style={[
+                            styles.statusPill,
+                            { 
+                              backgroundColor: 
+                                driver.approval_status === 'approved' ? '#e8f5e9' :
+                                driver.approval_status === 'rejected' ? '#ffebee' : '#fff3e0'
+                            }
+                          ]}>
+                            <Text style={[
+                              styles.statusPillText,
+                              {
+                                color:
+                                  driver.approval_status === 'approved' ? '#2e7d32' :
+                                  driver.approval_status === 'rejected' ? '#c62828' : '#ef6c00'
+                              }
+                            ]}>
+                              {(driver.approval_status || 'pending').toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {driver.rejection_reason && (
+                          <View style={styles.driverInfo}>
+                            <Text style={styles.infoLabel}>Rejection Reason</Text>
+                            <Text style={[styles.infoValue, { color: Colors.error }]}>
+                              {driver.rejection_reason}
+                            </Text>
+                          </View>
+                        )}
+
+                        {driver.approval_remarks && (
+                          <View style={styles.driverInfo}>
+                            <Text style={styles.infoLabel}>Remarks</Text>
+                            <Text style={styles.infoValue}>{driver.approval_remarks}</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Action Buttons for PENDING Drivers */}
+                      {driver.approval_status === 'pending' && (
+                        <>
+                          <View style={styles.actionButtons}>
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.approveBtn]}
+                              onPress={() => {
+                                console.log('[Admin] Approve button pressed for:', driver.driver_id);
+                                handleApproveDriver(driver.driver_id, 'approved');
+                              }}
+                            >
+                              <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                              <Text style={styles.actionBtnText}>APPROVE</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.rejectBtn]}
+                              onPress={() => {
+                                console.log('[Admin] Reject button pressed for:', driver.driver_id);
+                                handleApproveDriver(driver.driver_id, 'rejected', 'Documents not verified');
+                              }}
+                            >
+                              <Ionicons name="close-circle" size={24} color="#fff" />
+                              <Text style={styles.actionBtnText}>REJECT</Text>
+                            </TouchableOpacity>
+                          </View>
+                          {/* Delete PENDING Driver */}
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
+                            onPress={() => {
+                              console.log('[Admin] Delete PENDING button pressed for:', driver.driver_id);
+                              handleDeleteDriver(driver.driver_id);
+                            }}
+                          >
+                            <Ionicons name="trash" size={24} color="#fff" />
+                            <Text style={styles.actionBtnText}>DELETE PENDING DRIVER</Text>
+                          </TouchableOpacity>
+                        </>
                       )}
-                    </View>
-                  )}
 
-                  {/* RC Book */}
-                  {(selectedDriver.rc_book_image || selectedDriver.documents?.rc_front) && (
-                    <View style={styles.documentItem}>
-                      <Text style={styles.documentLabel}>RC Book</Text>
-                      <Image 
-                        source={{ uri: selectedDriver.rc_book_image || selectedDriver.documents?.rc_front }}
-                        style={styles.documentImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-                  )}
+                      {/* Add Balance Button for Approved Drivers */}
+                      {driver.approval_status === 'approved' && (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: Colors.secondary, marginTop: 16 }]}
+                            onPress={() => {
+                              console.log('[Admin] Add Wallet button pressed for:', driver.driver_id);
+                              setSelectedDriver(null);
+                              setFullDriverDetails(null);
+                              openWalletModal(driver.driver_id, driverName);
+                            }}
+                          >
+                            <Ionicons name="wallet" size={24} color="#fff" />
+                            <Text style={styles.actionBtnText}>ADD WALLET BALANCE</Text>
+                          </TouchableOpacity>
 
-                  {/* Insurance */}
-                  {(selectedDriver.insurance_image || selectedDriver.documents?.insurance) && (
-                    <View style={styles.documentItem}>
-                      <Text style={styles.documentLabel}>Insurance</Text>
-                      <Image 
-                        source={{ uri: selectedDriver.insurance_image || selectedDriver.documents?.insurance }}
-                        style={styles.documentImage}
-                        resizeMode="contain"
-                      />
-                      {selectedDriver.insurance_details && (
-                        <Text style={styles.documentNumber}>
-                          {selectedDriver.insurance_details}
-                        </Text>
+                          {/* Reset Status Button */}
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#FF9800', marginTop: 12 }]}
+                            onPress={() => {
+                              console.log('[Admin] Reset button pressed for:', driver.driver_id);
+                              handleResetDriver(driver.driver_id);
+                            }}
+                          >
+                            <Ionicons name="refresh" size={24} color="#fff" />
+                            <Text style={styles.actionBtnText}>RESET TO PENDING</Text>
+                          </TouchableOpacity>
+                        </>
                       )}
-                    </View>
-                  )}
-                </View>
 
-                {/* Status */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Status</Text>
-                  
-                  <View style={styles.driverInfo}>
-                    <Text style={styles.infoLabel}>Approval Status</Text>
-                    <View style={[
-                      styles.statusPill,
-                      { 
-                        backgroundColor: 
-                          selectedDriver.approval_status === 'approved' ? '#e8f5e9' :
-                          selectedDriver.approval_status === 'rejected' ? '#ffebee' : '#fff3e0'
-                      }
-                    ]}>
-                      <Text style={[
-                        styles.statusPillText,
-                        {
-                          color:
-                            selectedDriver.approval_status === 'approved' ? '#2e7d32' :
-                            selectedDriver.approval_status === 'rejected' ? '#c62828' : '#ef6c00'
-                        }
-                      ]}>
-                        {(selectedDriver.approval_status || 'pending').toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
+                      {/* Reject Approved Driver */}
+                      {driver.approval_status === 'approved' && (
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.rejectBtn, { marginTop: 12 }]}
+                          onPress={() => {
+                            console.log('[Admin] Revoke approval button pressed for:', driver.driver_id);
+                            handleApproveDriver(driver.driver_id, 'rejected', 'Approval revoked by admin');
+                          }}
+                        >
+                          <Ionicons name="close-circle" size={24} color="#fff" />
+                          <Text style={styles.actionBtnText}>REVOKE APPROVAL</Text>
+                        </TouchableOpacity>
+                      )}
 
-                  {selectedDriver.rejection_reason && (
-                    <View style={styles.driverInfo}>
-                      <Text style={styles.infoLabel}>Rejection Reason</Text>
-                      <Text style={[styles.infoValue, { color: Colors.error }]}>
-                        {selectedDriver.rejection_reason}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Action Buttons for PENDING Drivers */}
-                {selectedDriver.approval_status === 'pending' && (
-                  <>
-                    <View style={styles.actionButtons}>
+                      {/* Delete Driver Button - Always visible */}
                       <TouchableOpacity
-                        style={[styles.actionBtn, styles.approveBtn]}
+                        style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
                         onPress={() => {
-                          console.log('[Admin] Approve button pressed for:', selectedDriver.driver_id);
-                          handleApproveDriver(selectedDriver.driver_id, 'approved');
+                          console.log('[Admin] Delete button pressed for:', driver.driver_id);
+                          handleDeleteDriver(driver.driver_id);
                         }}
                       >
-                        <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                        <Text style={styles.actionBtnText}>APPROVE</Text>
+                        <Ionicons name="trash" size={24} color="#fff" />
+                        <Text style={styles.actionBtnText}>DELETE DRIVER</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.rejectBtn]}
-                        onPress={() => {
-                          console.log('[Admin] Reject button pressed for:', selectedDriver.driver_id);
-                          handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Documents not verified');
-                        }}
-                      >
-                        <Ionicons name="close-circle" size={24} color="#fff" />
-                        <Text style={styles.actionBtnText}>REJECT</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {/* Delete PENDING Driver */}
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
-                      onPress={() => {
-                        console.log('[Admin] Delete PENDING button pressed for:', selectedDriver.driver_id);
-                        handleDeleteDriver(selectedDriver.driver_id);
-                      }}
-                    >
-                      <Ionicons name="trash" size={24} color="#fff" />
-                      <Text style={styles.actionBtnText}>DELETE PENDING DRIVER</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
 
-                {/* Add Balance Button for Approved Drivers */}
-                {selectedDriver.approval_status === 'approved' && (
-                  <>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: Colors.secondary, marginTop: 16 }]}
-                      onPress={() => {
-                        console.log('[Admin] Add Wallet button pressed for:', selectedDriver.driver_id);
-                        setSelectedDriver(null);
-                        openWalletModal(
-                          selectedDriver.driver_id,
-                          selectedDriver.full_name || selectedDriver.personal_details?.full_name || 'Driver'
-                        );
-                      }}
-                    >
-                      <Ionicons name="wallet" size={24} color="#fff" />
-                      <Text style={styles.actionBtnText}>ADD WALLET BALANCE</Text>
-                    </TouchableOpacity>
-
-                    {/* Reset Status Button */}
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: '#FF9800', marginTop: 12 }]}
-                      onPress={() => {
-                        console.log('[Admin] Reset button pressed for:', selectedDriver.driver_id);
-                        handleResetDriver(selectedDriver.driver_id);
-                      }}
-                    >
-                      <Ionicons name="refresh" size={24} color="#fff" />
-                      <Text style={styles.actionBtnText}>RESET TO PENDING</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                {/* Reject Approved Driver */}
-                {selectedDriver.approval_status === 'approved' && (
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.rejectBtn, { marginTop: 12 }]}
-                    onPress={() => {
-                      console.log('[Admin] Revoke approval button pressed for:', selectedDriver.driver_id);
-                      handleApproveDriver(selectedDriver.driver_id, 'rejected', 'Approval revoked by admin');
-                    }}
-                  >
-                    <Ionicons name="close-circle" size={24} color="#fff" />
-                    <Text style={styles.actionBtnText}>REVOKE APPROVAL</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Delete Driver Button - Always visible */}
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#B71C1C', marginTop: 12 }]}
-                  onPress={() => {
-                    console.log('[Admin] Delete button pressed for:', selectedDriver.driver_id);
-                    handleDeleteDriver(selectedDriver.driver_id);
-                  }}
-                >
-                  <Ionicons name="trash" size={24} color="#fff" />
-                  <Text style={styles.actionBtnText}>DELETE DRIVER</Text>
-                </TouchableOpacity>
-
-                <View style={{ height: 20 }} />
+                      <View style={{ height: 20 }} />
+                    </>
+                  );
+                })()}
               </ScrollView>
             )}
           </View>
@@ -1202,6 +1394,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.gray,
     marginTop: 4,
+  },
+  driverIdText: {
+    fontSize: 11,
+    color: Colors.secondary,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  addressText: {
+    fontSize: 11,
+    color: Colors.textLight,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   statusBadge: {
     paddingHorizontal: 10,
@@ -1456,6 +1660,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textLight,
     marginTop: 8,
+    textAlign: 'center',
+  },
+  documentLoading: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+  },
+  documentLoadingText: {
+    fontSize: 14,
+    color: Colors.textLight,
+  },
+  noDocumentsText: {
+    fontSize: 14,
+    color: Colors.textLight,
+    textAlign: 'center',
+    padding: 20,
+    fontStyle: 'italic',
+  },
+  driverPhotoContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  driverPhoto: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: Colors.secondary,
+  },
+  photoPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  photoPlaceholderText: {
+    fontSize: 12,
+    color: Colors.textLight,
     textAlign: 'center',
   },
   statusPill: {

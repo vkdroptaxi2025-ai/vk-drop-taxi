@@ -83,6 +83,9 @@ export const withdrawMoney = (driverId: string, amount: number) =>
 export const getAllDrivers = () =>
   api.get('/api/admin/drivers');
 
+export const getDriverFullDetails = (driverId: string) =>
+  api.get(`/api/admin/driver/${driverId}/full`);
+
 export const approveDriver = async (driverId: string, status: string, rejectionReason?: string) => {
   const payload = { 
     driver_id: driverId, 
