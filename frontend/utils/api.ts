@@ -127,6 +127,7 @@ export const updateTariff = (data: any) =>
 // Driver Duty APIs
 export const updateDutyStatus = (driverId: string, data: {
   duty_on: boolean;
+  is_online?: boolean;
   go_home_mode?: boolean;
   home_latitude?: number;
   home_longitude?: number;
