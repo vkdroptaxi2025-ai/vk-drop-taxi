@@ -1358,10 +1358,40 @@ async def withdraw_money(request: WithdrawRequest):
     return {"success": True, "message": "Withdrawal request submitted"}
 
 # ==================== ADMIN ENDPOINTS ====================
+
+# Projection to exclude large base64 image fields from queries
+# This excludes both nested document fields and flat image fields
+DRIVER_LIST_PROJECTION = {
+    # Nested document fields
+    "driver_photos": 0,
+    "driver_documents": 0,
+    "vehicle_documents": 0,
+    "vehicle_photos": 0,
+    "documents": 0,
+    "payment": 0,
+    # Flat image fields (for backward compatibility with old data)
+    "driver_photo": 0,
+    "driver_with_vehicle_photo": 0,
+    "aadhaar_front": 0,
+    "aadhaar_back": 0,
+    "license_front": 0,
+    "license_back": 0,
+    "rc_front": 0,
+    "rc_back": 0,
+    "insurance": 0,
+    "permit": 0,
+    "pollution_certificate": 0,
+    "vehicle_front_photo": 0,
+    "vehicle_back_photo": 0,
+    "vehicle_left_photo": 0,
+    "vehicle_right_photo": 0,
+    "payment_screenshot": 0,
+}
+
 @api_router.get("/admin/drivers")
 async def get_all_drivers():
-    """Get all drivers"""
-    drivers = await db.drivers.find().sort("created_at", -1).to_list(1000)
+    """Get all drivers - excludes large image fields for performance"""
+    drivers = await db.drivers.find({}, DRIVER_LIST_PROJECTION).sort("created_at", -1).to_list(1000)
     for driver in drivers:
         driver['_id'] = str(driver['_id'])
     return {"success": True, "drivers": drivers}
@@ -1596,13 +1626,16 @@ async def create_smart_booking(booking: SmartBookingCreate):
             raise HTTPException(status_code=400, detail=f"Driver wallet balance ({wallet_balance}) is below minimum ₹1000")
     else:
         # Auto assignment with smart matching
-        # Get all approved, online, duty-on drivers
-        all_drivers = await db.drivers.find({
-            "approval_status": DriverApprovalStatus.APPROVED.value,
-            "duty_on": True,
-            "is_online": True,
-            "driver_status": {"$in": [DriverStatus.AVAILABLE.value, DriverStatus.WAITING.value, DriverStatus.GOING_HOME.value]}
-        }).to_list(1000)
+        # Get all approved, online, duty-on drivers - EXCLUDE large image fields
+        all_drivers = await db.drivers.find(
+            {
+                "approval_status": DriverApprovalStatus.APPROVED.value,
+                "duty_on": True,
+                "is_online": True,
+                "driver_status": {"$in": [DriverStatus.AVAILABLE.value, DriverStatus.WAITING.value, DriverStatus.GOING_HOME.value]}
+            },
+            DRIVER_LIST_PROJECTION  # Exclude base64 images
+        ).to_list(1000)
         
         eligible_drivers = []
         
