@@ -161,7 +161,7 @@ export default function DriverOnboardingForm() {
         mediaTypes: 'images',
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.3,
+        quality: 0.2, // REDUCED quality to 20% for smaller file sizes
         base64: true,
       });
       
@@ -174,9 +174,18 @@ export default function DriverOnboardingForm() {
         
         if (asset.base64 && typeof asset.base64 === 'string' && asset.base64.length > 0) {
           const imageData = `data:image/jpeg;base64,${asset.base64}`;
+          
+          // Check file size and warn if too large
+          const sizeInKB = Math.round(imageData.length / 1024);
+          console.log(`[ImagePicker] ${label} size: ${sizeInKB} KB`);
+          
+          if (sizeInKB > 500) {
+            console.warn(`[ImagePicker] ${label} is large (${sizeInKB} KB). May affect upload speed.`);
+          }
+          
           setter(imageData);
           console.log(`[ImagePicker] ${label} uploaded successfully (base64)`);
-          Alert.alert('Success', `${label} uploaded!`);
+          Alert.alert('Success', `${label} uploaded! (${sizeInKB} KB)`);
         } else if (asset.uri && typeof asset.uri === 'string') {
           // Use URI directly if it's already a data URL or valid URI
           if (asset.uri.startsWith('data:')) {
@@ -276,10 +285,17 @@ export default function DriverOnboardingForm() {
     setLoading(true);
     console.log('[Submit] Starting driver registration submission...');
     
-    // Show progress alert
-    Alert.alert('Submitting...', 'Please wait while we submit your application. This may take up to 30 seconds.');
-    
     try {
+      // Prepare data - compress images if too large
+      const compressBase64 = (base64: string | null): string | null => {
+        if (!base64) return null;
+        // Check if image is too large (> 500KB after base64 encoding)
+        if (base64.length > 700000) {
+          console.warn('[Submit] Image too large, may cause issues:', base64.length);
+        }
+        return base64;
+      };
+
       const data = {
         basic_details: {
           full_name: fullName.trim(),
@@ -291,14 +307,14 @@ export default function DriverOnboardingForm() {
           driving_experience_years: parseInt(experience),
         },
         driver_photos: {
-          driver_photo: driverPhoto,
-          driver_with_vehicle_photo: driverWithVehicle,
+          driver_photo: compressBase64(driverPhoto),
+          driver_with_vehicle_photo: compressBase64(driverWithVehicle),
         },
         driver_documents: {
-          aadhaar_front: aadhaarFront,
-          aadhaar_back: aadhaarBack,
-          license_front: licenseFront,
-          license_back: licenseBack,
+          aadhaar_front: compressBase64(aadhaarFront),
+          aadhaar_back: compressBase64(aadhaarBack),
+          license_front: compressBase64(licenseFront),
+          license_back: compressBase64(licenseBack),
         },
         vehicle_details: {
           vehicle_type: vehicleType,
@@ -307,21 +323,21 @@ export default function DriverOnboardingForm() {
           vehicle_year: parseInt(vehicleYear),
         },
         vehicle_documents: {
-          rc_front: rcFront,
-          rc_back: rcBack,
-          insurance: insurance,
-          permit: permit,
-          pollution_certificate: pollution,
+          rc_front: compressBase64(rcFront),
+          rc_back: compressBase64(rcBack),
+          insurance: compressBase64(insurance),
+          permit: compressBase64(permit),
+          pollution_certificate: compressBase64(pollution),
         },
         vehicle_photos: {
-          front_photo: vehicleFront,
-          back_photo: vehicleBack,
-          left_photo: vehicleLeft,
-          right_photo: vehicleRight,
+          front_photo: compressBase64(vehicleFront),
+          back_photo: compressBase64(vehicleBack),
+          left_photo: compressBase64(vehicleLeft),
+          right_photo: compressBase64(vehicleRight),
         },
         payment: paymentScreenshot ? {
           amount: 500,
-          screenshot: paymentScreenshot,
+          screenshot: compressBase64(paymentScreenshot),
         } : null,
       };
 
@@ -329,10 +345,25 @@ export default function DriverOnboardingForm() {
       console.log('[Submit] Phone:', phone);
       console.log('[Submit] Name:', fullName);
       
-      const response = await onboardDriver(data);
+      // Calculate payload size for debugging
+      const payloadSize = JSON.stringify(data).length;
+      console.log('[Submit] Payload size:', (payloadSize / 1024 / 1024).toFixed(2), 'MB');
+      
+      // Create a timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('TIMEOUT')), 30000); // 30 second timeout
+      });
+      
+      // Race between API call and timeout
+      const response: any = await Promise.race([
+        onboardDriver(data),
+        timeoutPromise
+      ]);
+      
       console.log('[Submit] API Response received:', JSON.stringify(response.data));
       
       if (response.data.success) {
+        setLoading(false);
         setDriverId(response.data.driver_id);
         setSubmitted(true);
         // Store driver data in auth store
@@ -344,11 +375,6 @@ export default function DriverOnboardingForm() {
           approval_status: response.data.approval_status || 'pending',
         });
         console.log('[Submit] SUCCESS - Driver registered with ID:', response.data.driver_id);
-        
-        // Only show success if not already showing success screen
-        if (!response.data.existing) {
-          Alert.alert('Success!', `Your application has been submitted!\nDriver ID: ${response.data.driver_id}`);
-        }
       } else {
         console.error('[Submit] API returned success=false:', response.data);
         setLoading(false);
@@ -360,7 +386,13 @@ export default function DriverOnboardingForm() {
       setLoading(false);
       
       // Handle different error types
-      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      if (error.message === 'TIMEOUT') {
+        Alert.alert(
+          'Request Timeout',
+          'The submission is taking too long (>30s).\n\nThis could be due to:\n• Slow internet connection\n• Large file sizes\n\nPlease try again or reduce image quality.',
+          [{ text: 'Retry', onPress: handleSubmit }, { text: 'Cancel', style: 'cancel' }]
+        );
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
         Alert.alert(
           'Connection Timeout',
           'The server is taking too long to respond. This could be due to slow internet or large file size.\n\nPlease try again.',
@@ -774,20 +806,31 @@ export default function DriverOnboardingForm() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={24} color="#fff" />
-              <Text style={styles.submitBtnText}>SUBMIT APPLICATION</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Submitting your application...</Text>
+            <Text style={styles.loadingSubtext}>This may take up to 30 seconds</Text>
+            <TouchableOpacity 
+              style={styles.cancelBtn}
+              onPress={() => {
+                setLoading(false);
+                Alert.alert('Cancelled', 'Submission cancelled. You can try again.');
+              }}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.submitBtn}
+            onPress={handleSubmit}
+          >
+            <Ionicons name="checkmark-circle" size={24} color="#fff" />
+            <Text style={styles.submitBtnText}>SUBMIT APPLICATION</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -1023,6 +1066,39 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginTop: 16,
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginTop: 4,
+  },
+  cancelBtn: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  cancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.error,
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',

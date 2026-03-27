@@ -26,7 +26,9 @@ export const registerDriver = (data: any) =>
   api.post('/api/driver/register', data);
 
 export const onboardDriver = (data: any) =>
-  api.post('/api/driver/onboard', data);
+  api.post('/api/driver/onboard', data, {
+    timeout: 60000, // 60 second timeout for driver onboarding
+  });
 
 export const getDriverApprovalStatus = (driverId: string) =>
   api.get(`/api/driver/${driverId}/status`);
