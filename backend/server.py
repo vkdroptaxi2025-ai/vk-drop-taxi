@@ -1979,3 +1979,21 @@ logger = logging.getLogger(__name__)
 async def shutdown_db_client():
     client.close()
 
+@app.on_event("startup")
+async def startup_event():
+    """
+    Server startup - NO SEED DATA IS INSERTED.
+    Database is persistent and only contains real user data.
+    """
+    logger.info("=" * 60)
+    logger.info("VK DROP TAXI SERVER STARTING")
+    logger.info("=" * 60)
+    logger.info("Database: Connected to MongoDB")
+    logger.info("IMPORTANT: No seed/dummy data is inserted on startup")
+    logger.info("All data in database is persistent user data")
+    
+    # Count existing drivers for logging
+    driver_count = await db.drivers.count_documents({})
+    logger.info(f"Existing drivers in database: {driver_count}")
+    logger.info("=" * 60)
+
