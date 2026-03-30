@@ -60,7 +60,7 @@ def test_admin_drivers_list():
         log_test(f"Sample driver fields: {list(first_driver.keys())}")
         
         # Verify required fields are present
-        required_fields = ['driver_id', 'phone', 'full_name', 'address', 'vehicle_type', 'vehicle_number', 'approval_status']
+        required_fields = ['driver_id', 'full_name', 'phone', 'address', 'vehicle_number', 'vehicle_type', 'vehicle_model', 'vehicle_year', 'approval_status']
         missing_fields = []
         
         for field in required_fields:
@@ -70,6 +70,17 @@ def test_admin_drivers_list():
         if missing_fields:
             log_test(f"❌ FAILED: Missing required fields: {missing_fields}", "ERROR")
             return False
+        
+        log_test("✅ PASSED: All required fields present in list view:")
+        log_test(f"  - driver_id: {first_driver.get('driver_id', 'N/A')}")
+        log_test(f"  - full_name: {first_driver.get('full_name', 'N/A')}")
+        log_test(f"  - phone: {first_driver.get('phone', 'N/A')}")
+        log_test(f"  - address: {first_driver.get('address', 'N/A')}")
+        log_test(f"  - vehicle_number: {first_driver.get('vehicle_number', 'N/A')}")
+        log_test(f"  - vehicle_type: {first_driver.get('vehicle_type', 'N/A')}")
+        log_test(f"  - vehicle_model: {first_driver.get('vehicle_model', 'N/A')}")
+        log_test(f"  - vehicle_year: {first_driver.get('vehicle_year', 'N/A')}")
+        log_test(f"  - approval_status: {first_driver.get('approval_status', 'N/A')}")
         
         # Check for base64 image strings (should NOT be present)
         response_text = response.text
@@ -127,29 +138,82 @@ def test_admin_driver_full_details(driver_id):
         driver = data['driver']
         log_test(f"Driver fields: {list(driver.keys())}")
         
-        # Check for driver documents
-        document_fields = [
-            'driver_documents',  # Should contain aadhaar_front, aadhaar_back, license_front, license_back
-            'vehicle_documents', # Should contain rc_front, rc_back, insurance, permit, pollution_certificate
-            'driver_photos',     # Should contain driver photos
-            'vehicle_photos'     # Should contain vehicle photos
+        # Verify all required fields from the review request are present
+        required_basic_fields = [
+            'driver_id', 'full_name', 'phone', 'address', 'aadhaar_number', 'pan_number', 
+            'driving_license_number', 'driving_experience_years'
         ]
         
-        found_documents = []
+        required_vehicle_fields = [
+            'vehicle_type', 'vehicle_number', 'vehicle_model', 'vehicle_year'
+        ]
+        
+        required_approval_fields = [
+            'approval_status', 'is_online', 'rating'
+        ]
+        
+        required_document_images = [
+            'driver_photo', 'aadhaar_front', 'aadhaar_back', 'license_front', 'license_back',
+            'rc_front', 'rc_back', 'insurance', 'permit', 'pollution_certificate',
+            'vehicle_front_photo', 'vehicle_back_photo'
+        ]
+        
+        # Check basic fields
+        missing_basic = []
+        for field in required_basic_fields:
+            if field not in driver or driver[field] is None:
+                missing_basic.append(field)
+        
+        # Check vehicle fields
+        missing_vehicle = []
+        for field in required_vehicle_fields:
+            if field not in driver or driver[field] is None:
+                missing_vehicle.append(field)
+        
+        # Check approval fields
+        missing_approval = []
+        for field in required_approval_fields:
+            if field not in driver or driver[field] is None:
+                missing_approval.append(field)
+        
+        # Check document images
         missing_documents = []
+        for field in required_document_images:
+            if field not in driver or not driver[field]:
+                missing_documents.append(field)
         
-        for doc_field in document_fields:
-            if doc_field in driver and driver[doc_field]:
-                found_documents.append(doc_field)
-                log_test(f"✅ Found {doc_field}: {list(driver[doc_field].keys()) if isinstance(driver[doc_field], dict) else 'present'}")
-            else:
-                missing_documents.append(doc_field)
+        # Log results
+        if not missing_basic:
+            log_test("✅ All basic driver fields present:")
+            for field in required_basic_fields:
+                log_test(f"  - {field}: {str(driver[field])[:50]}{'...' if len(str(driver[field])) > 50 else ''}")
+        else:
+            log_test(f"❌ Missing basic fields: {missing_basic}", "ERROR")
         
-        # Check for payment screenshot if exists
-        if 'payment' in driver and driver['payment']:
-            if 'screenshot' in driver['payment']:
-                found_documents.append('payment.screenshot')
-                log_test("✅ Found payment screenshot")
+        if not missing_vehicle:
+            log_test("✅ All vehicle fields present:")
+            for field in required_vehicle_fields:
+                log_test(f"  - {field}: {driver[field]}")
+        else:
+            log_test(f"❌ Missing vehicle fields: {missing_vehicle}", "ERROR")
+        
+        if not missing_approval:
+            log_test("✅ All approval fields present:")
+            for field in required_approval_fields:
+                log_test(f"  - {field}: {driver[field]}")
+        else:
+            log_test(f"❌ Missing approval fields: {missing_approval}", "ERROR")
+        
+        if not missing_documents:
+            log_test("✅ All document images present:")
+            for field in required_document_images:
+                image_data = driver[field]
+                if isinstance(image_data, str) and image_data.startswith('data:image'):
+                    log_test(f"  - {field}: Base64 image ({len(image_data)} chars)")
+                else:
+                    log_test(f"  - {field}: {str(image_data)[:50]}{'...' if len(str(image_data)) > 50 else ''}")
+        else:
+            log_test(f"❌ Missing document images: {missing_documents}", "ERROR")
         
         # Check for base64 images (should be present in full details)
         response_text = response.text
@@ -157,40 +221,22 @@ def test_admin_driver_full_details(driver_id):
         
         log_test(f"Found {base64_count} base64 image strings in full details response")
         
-        # Verify specific document structure
-        success_checks = []
+        # Determine overall success
+        all_fields_present = (
+            not missing_basic and 
+            not missing_vehicle and 
+            not missing_approval and 
+            not missing_documents
+        )
         
-        # Check driver_documents structure
-        if 'driver_documents' in driver and driver['driver_documents']:
-            driver_docs = driver['driver_documents']
-            expected_driver_docs = ['aadhaar_front', 'aadhaar_back', 'license_front', 'license_back']
-            found_driver_docs = [doc for doc in expected_driver_docs if doc in driver_docs]
-            success_checks.append(f"Driver documents: {len(found_driver_docs)}/{len(expected_driver_docs)} found")
-        
-        # Check vehicle_documents structure
-        if 'vehicle_documents' in driver and driver['vehicle_documents']:
-            vehicle_docs = driver['vehicle_documents']
-            expected_vehicle_docs = ['rc_front', 'rc_back', 'insurance', 'permit', 'pollution_certificate']
-            found_vehicle_docs = [doc for doc in expected_vehicle_docs if doc in vehicle_docs]
-            success_checks.append(f"Vehicle documents: {len(found_vehicle_docs)}/{len(expected_vehicle_docs)} found")
-        
-        # Check photos
-        if 'driver_photos' in driver and driver['driver_photos']:
-            success_checks.append("Driver photos: present")
-        
-        if 'vehicle_photos' in driver and driver['vehicle_photos']:
-            success_checks.append("Vehicle photos: present")
-        
-        log_test("✅ PASSED: Full details API returns SUCCESS")
-        log_test("✅ PASSED: Response contains complete driver data")
-        
-        for check in success_checks:
-            log_test(f"✅ {check}")
-        
-        if missing_documents:
-            log_test(f"⚠️  Note: Missing document sections: {missing_documents}", "WARN")
-        
-        return True
+        if all_fields_present:
+            log_test("✅ PASSED: Full details API returns SUCCESS")
+            log_test("✅ PASSED: All required fields present")
+            log_test("✅ PASSED: All document images present")
+            return True
+        else:
+            log_test("❌ FAILED: Some required fields or documents are missing", "ERROR")
+            return False
         
     except requests.exceptions.RequestException as e:
         log_test(f"❌ FAILED: Request error - {str(e)}", "ERROR")
@@ -204,7 +250,7 @@ def test_admin_driver_full_details(driver_id):
 
 def test_specific_driver_id():
     """Test with the specific driver_id mentioned in the review request"""
-    log_test("🔍 Testing specific driver_id: VKDRV1026")
+    log_test("🔍 Testing specific driver_id: VKDRV1025")
     
     # First check if this driver exists in the list
     try:
@@ -213,28 +259,28 @@ def test_specific_driver_id():
             data = response.json()
             drivers = data.get('drivers', [])
             
-            # Look for VKDRV1026
+            # Look for VKDRV1025
             target_driver = None
             for driver in drivers:
-                if driver.get('driver_id') == 'VKDRV1026':
+                if driver.get('driver_id') == 'VKDRV1025':
                     target_driver = driver
                     break
             
             if target_driver:
-                log_test("✅ Found VKDRV1026 in driver list")
+                log_test("✅ Found VKDRV1025 in driver list")
                 log_test(f"Driver details: {target_driver.get('full_name', 'N/A')}, {target_driver.get('phone', 'N/A')}, Status: {target_driver.get('approval_status', 'N/A')}")
                 
                 # Test full details for this specific driver
-                return test_admin_driver_full_details('VKDRV1026')
+                return test_admin_driver_full_details('VKDRV1025')
             else:
-                log_test("⚠️  VKDRV1026 not found in driver list, will test with first available driver", "WARN")
+                log_test("⚠️  VKDRV1025 not found in driver list, will test with first available driver", "WARN")
                 return None
         else:
             log_test(f"❌ Could not fetch driver list: {response.status_code}", "ERROR")
             return None
             
     except Exception as e:
-        log_test(f"❌ Error checking for VKDRV1026: {str(e)}", "ERROR")
+        log_test(f"❌ Error checking for VKDRV1025: {str(e)}", "ERROR")
         return None
 
 def main():
@@ -257,16 +303,16 @@ def main():
     else:
         test_results.append("✅ Admin drivers list test PASSED")
         
-        # Test 2: Specific driver full details (VKDRV1026)
+        # Test 2: Specific driver full details (VKDRV1025)
         log_test("\n" + "="*60)
-        log_test("TEST 2: Specific Driver Full Details (VKDRV1026)")
+        log_test("TEST 2: Specific Driver Full Details (VKDRV1025)")
         log_test("="*60)
         
         specific_result = test_specific_driver_id()
         if specific_result is True:
-            test_results.append("✅ VKDRV1026 full details test PASSED")
+            test_results.append("✅ VKDRV1025 full details test PASSED")
         elif specific_result is False:
-            test_results.append("❌ VKDRV1026 full details test FAILED")
+            test_results.append("❌ VKDRV1025 full details test FAILED")
         else:
             # VKDRV1026 not found, test with first available driver
             if isinstance(list_result, str):  # We got a driver_id from list test
