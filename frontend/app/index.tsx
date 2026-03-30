@@ -18,8 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
-// Admin authorized phone numbers
-const ADMIN_PHONES = ['9345538164'];
+// Admin access is handled by backend - no need for frontend phone validation
 
 export default function WelcomeScreen() {
   const router = useRouter();
