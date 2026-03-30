@@ -1634,7 +1634,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: Colors.white,
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1649,12 +1649,12 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: '#1A1A1A', // Dark text for white background
   },
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text,
+    color: '#1A1A1A', // Dark text for white background
     marginBottom: 8,
     marginTop: 12,
   },
@@ -1694,12 +1694,12 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 12,
-    color: Colors.textLight,
+    color: '#666666', // Gray text for labels on white background
     marginBottom: 4,
   },
   infoValue: {
     fontSize: 15,
-    color: Colors.text,
+    color: '#1A1A1A', // Dark text for values on white background
     fontWeight: '600',
   },
   actionButtons: {
@@ -1723,7 +1723,7 @@ const styles = StyleSheet.create({
   detailSectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: Colors.secondary,
+    color: '#2E7D32', // Green - kept as accent color
     marginBottom: 12,
   },
   documentItem: {
@@ -1735,7 +1735,7 @@ const styles = StyleSheet.create({
   documentLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text,
+    color: '#1A1A1A', // Dark text for white background
     marginBottom: 8,
   },
   documentImage: {
@@ -1746,7 +1746,7 @@ const styles = StyleSheet.create({
   },
   documentNumber: {
     fontSize: 12,
-    color: Colors.textLight,
+    color: '#666666', // Gray text for white background
     marginTop: 8,
     textAlign: 'center',
   },
@@ -1758,11 +1758,12 @@ const styles = StyleSheet.create({
   },
   documentLoadingText: {
     fontSize: 14,
-    color: Colors.textLight,
+    color: '#666666', // Gray text for white background
+    marginTop: 8,
   },
   noDocumentsText: {
     fontSize: 14,
-    color: Colors.textLight,
+    color: '#666666', // Gray text for white background
     textAlign: 'center',
     padding: 20,
     fontStyle: 'italic',
@@ -1776,7 +1777,7 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     borderWidth: 3,
-    borderColor: Colors.secondary,
+    borderColor: '#2E7D32', // Green border
   },
   photoPlaceholder: {
     width: 100,
@@ -1790,7 +1791,7 @@ const styles = StyleSheet.create({
   },
   photoPlaceholderText: {
     fontSize: 12,
-    color: Colors.textLight,
+    color: '#666666', // Gray text for white background
     textAlign: 'center',
   },
   statusPill: {
