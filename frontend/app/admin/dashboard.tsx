@@ -10,6 +10,7 @@ import {
   Image,
   RefreshControl,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../utils/colors';
@@ -19,6 +20,7 @@ import {
   approveDriver,
   resetDriverStatus,
   deleteDriver,
+  updateWalletBalance,
   getAllCustomers,
   getAllBookings,
   getAdminStats,
@@ -60,6 +62,12 @@ export default function AdminDashboard() {
   const [walletDriverId, setWalletDriverId] = useState('');
   const [walletDriverName, setWalletDriverName] = useState('');
   const [walletAmount, setWalletAmount] = useState('');
+
+  // Deduct Wallet State
+  const [showDeductModal, setShowDeductModal] = useState(false);
+  const [deductDriverId, setDeductDriverId] = useState('');
+  const [deductDriverName, setDeductDriverName] = useState('');
+  const [deductAmount, setDeductAmount] = useState('');
 
   useEffect(() => {
     fetchStats();
@@ -196,6 +204,44 @@ export default function AdminDashboard() {
     setWalletDriverName(driverName);
     setWalletAmount('');
     setShowWalletModal(true);
+  };
+
+  // Open Deduct Wallet Modal
+  const openDeductModal = (driverId: string, driverName: string) => {
+    setDeductDriverId(driverId);
+    setDeductDriverName(driverName);
+    setDeductAmount('');
+    setShowDeductModal(true);
+  };
+
+  // Handle Deduct Wallet
+  const handleDeductWallet = async () => {
+    const amount = parseFloat(deductAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    try {
+      const response = await updateWalletBalance(deductDriverId, amount, 'deduct');
+      if (response.data.success) {
+        Alert.alert(
+          'Success', 
+          `₹${amount} deducted.\nNew Balance: ₹${response.data.new_balance}`
+        );
+        setShowDeductModal(false);
+        setDeductAmount('');
+        // Refresh driver details to show updated balance
+        if (selectedDriver) {
+          const fullResponse = await getDriverFullDetails(deductDriverId);
+          if (fullResponse.data.success) {
+            setFullDriverDetails(fullResponse.data.driver);
+          }
+        }
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to deduct from wallet');
+    }
   };
 
   // Reset Driver Status Handler
@@ -1151,6 +1197,13 @@ export default function AdminDashboard() {
                           <Text style={styles.infoValue}>{driver?.total_trips || 0}</Text>
                         </View>
 
+                        <View style={styles.driverInfo}>
+                          <Text style={styles.infoLabel}>Wallet Balance</Text>
+                          <Text style={[styles.infoValue, { color: '#2E7D32', fontSize: 18, fontWeight: 'bold' }]}>
+                            ₹{driver?.wallet_balance || 0}
+                          </Text>
+                        </View>
+
                         {driver?.rejection_reason && (
                           <View style={styles.driverInfo}>
                             <Text style={styles.infoLabel}>Rejection Reason</Text>
@@ -1223,6 +1276,18 @@ export default function AdminDashboard() {
                             <Text style={styles.actionBtnText}>ADD WALLET BALANCE</Text>
                           </TouchableOpacity>
 
+                          {/* Deduct Wallet Button */}
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#E65100', marginTop: 12 }]}
+                            onPress={() => {
+                              console.log('[Admin] Deduct Wallet button pressed for:', driver?.driver_id);
+                              openDeductModal(driver?.driver_id, driverName);
+                            }}
+                          >
+                            <Ionicons name="remove-circle" size={24} color="#fff" />
+                            <Text style={styles.actionBtnText}>DEDUCT WALLET</Text>
+                          </TouchableOpacity>
+
                           {/* Reset Status Button */}
                           <TouchableOpacity
                             style={[styles.actionBtn, { backgroundColor: '#FF9800', marginTop: 12 }]}
@@ -1285,16 +1350,16 @@ export default function AdminDashboard() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Wallet Balance</Text>
               <TouchableOpacity onPress={() => setShowWalletModal(false)}>
-                <Ionicons name="close" size={28} color={Colors.text} />
+                <Ionicons name="close" size={28} color="#1A1A1A" />
               </TouchableOpacity>
             </View>
 
             <View style={{ padding: 16 }}>
-              <Text style={{ fontSize: 16, color: Colors.textLight, marginBottom: 8 }}>
-                Driver: <Text style={{ fontWeight: 'bold', color: Colors.text }}>{walletDriverName}</Text>
+              <Text style={{ fontSize: 16, color: '#666666', marginBottom: 8 }}>
+                Driver: <Text style={{ fontWeight: 'bold', color: '#1A1A1A' }}>{walletDriverName}</Text>
               </Text>
 
-              <Text style={{ fontSize: 14, fontWeight: '600', color: Colors.text, marginTop: 16, marginBottom: 8 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1A1A1A', marginTop: 16, marginBottom: 8 }}>
                 Enter Amount (₹)
               </Text>
               <Input
@@ -1317,7 +1382,7 @@ export default function AdminDashboard() {
                     }}
                     onPress={() => setWalletAmount(String(amt))}
                   >
-                    <Text style={{ fontWeight: '600', color: walletAmount === String(amt) ? '#fff' : Colors.text }}>
+                    <Text style={{ fontWeight: '600', color: walletAmount === String(amt) ? '#fff' : '#1A1A1A' }}>
                       ₹{amt}
                     </Text>
                   </TouchableOpacity>
@@ -1330,6 +1395,86 @@ export default function AdminDashboard() {
                 variant="secondary"
                 style={{ marginTop: 24 }}
               />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Deduct Wallet Modal */}
+      <Modal
+        visible={showDeductModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDeductModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: 400 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Deduct Wallet Balance</Text>
+              <TouchableOpacity onPress={() => setShowDeductModal(false)}>
+                <Ionicons name="close" size={28} color="#1A1A1A" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ padding: 16 }}>
+              <Text style={{ fontSize: 16, color: '#666666', marginBottom: 8 }}>
+                Driver: <Text style={{ fontWeight: 'bold', color: '#1A1A1A' }}>{deductDriverName}</Text>
+              </Text>
+
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1A1A1A', marginTop: 16, marginBottom: 8 }}>
+                Enter Amount to Deduct (₹)
+              </Text>
+              <TextInput
+                value={deductAmount}
+                onChangeText={setDeductAmount}
+                placeholder="Enter amount"
+                keyboardType="numeric"
+                style={{
+                  borderWidth: 1,
+                  borderColor: '#ddd',
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 16,
+                  color: '#1A1A1A',
+                  backgroundColor: '#fff',
+                }}
+                placeholderTextColor="#999"
+              />
+
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                {[100, 200, 500, 1000].map((amt) => (
+                  <TouchableOpacity
+                    key={amt}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      backgroundColor: deductAmount === String(amt) ? '#E65100' : '#f0f0f0',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => setDeductAmount(String(amt))}
+                  >
+                    <Text style={{ fontWeight: '600', color: deductAmount === String(amt) ? '#fff' : '#1A1A1A' }}>
+                      ₹{amt}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#E65100',
+                  paddingVertical: 14,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  marginTop: 24,
+                }}
+                onPress={handleDeductWallet}
+              >
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
+                  Deduct ₹{deductAmount || '0'} from Wallet
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>

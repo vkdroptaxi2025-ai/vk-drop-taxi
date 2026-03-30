@@ -112,6 +112,9 @@ export const resetDriverStatus = (driverId: string) =>
 export const deleteDriver = (driverId: string) =>
   api.delete(`/api/admin/driver/${driverId}`);
 
+export const updateWalletBalance = (driverId: string, amount: number, type: 'add' | 'deduct') =>
+  api.post('/api/admin/wallet/update', { driver_id: driverId, amount, type });
+
 export const getAllCustomers = () =>
   api.get('/api/admin/customers');
 

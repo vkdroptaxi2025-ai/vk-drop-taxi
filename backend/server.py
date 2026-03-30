@@ -1361,6 +1361,73 @@ async def withdraw_money(request: WithdrawRequest):
     
     return {"success": True, "message": "Withdrawal request submitted"}
 
+# Admin Wallet Update Request Model
+class AdminWalletUpdateRequest(BaseModel):
+    driver_id: str
+    amount: float
+    type: str  # "add" or "deduct"
+
+@api_router.post("/admin/wallet/update")
+async def admin_update_wallet(request: AdminWalletUpdateRequest):
+    """Admin endpoint to add or deduct wallet balance"""
+    # Verify driver exists
+    driver = await db.drivers.find_one({"driver_id": request.driver_id})
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    # Get or create wallet
+    wallet = await db.wallets.find_one({"user_id": request.driver_id})
+    current_balance = wallet.get('balance', 0) if wallet else 0
+    
+    if not wallet:
+        wallet = {
+            "user_id": request.driver_id,
+            "balance": 0.0,
+            "transactions": []
+        }
+        await db.wallets.insert_one(wallet)
+        current_balance = 0
+    
+    # Calculate new balance based on type
+    if request.type == "add":
+        new_balance = current_balance + request.amount
+        transaction_type = "credit"
+        description = f"Admin added ₹{request.amount} to wallet"
+    elif request.type == "deduct":
+        new_balance = max(0, current_balance - request.amount)  # Don't go below 0
+        transaction_type = "debit"
+        description = f"Admin deducted ₹{request.amount} from wallet"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid type. Use 'add' or 'deduct'")
+    
+    # Create transaction record
+    transaction = {
+        "transaction_id": str(uuid.uuid4()),
+        "amount": request.amount,
+        "type": transaction_type,
+        "description": description,
+        "admin_action": True,
+        "timestamp": datetime.utcnow()
+    }
+    
+    # Update wallet
+    await db.wallets.update_one(
+        {"user_id": request.driver_id},
+        {
+            "$set": {"balance": new_balance},
+            "$push": {"transactions": transaction}
+        }
+    )
+    
+    return {
+        "success": True, 
+        "message": f"Wallet {'credited' if request.type == 'add' else 'debited'} successfully",
+        "previous_balance": current_balance,
+        "new_balance": new_balance,
+        "amount": request.amount,
+        "type": request.type
+    }
+
 # ==================== ADMIN ENDPOINTS ====================
 
 # Projection to exclude large base64 image fields from queries
@@ -1416,12 +1483,18 @@ async def get_driver_full_details(driver_id: str):
     """
     Get FULL driver details INCLUDING all documents for admin verification.
     This returns base64 images - use only when viewing individual driver details.
+    Also includes wallet balance.
     """
     driver = await db.drivers.find_one({"driver_id": driver_id})
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     
     driver['_id'] = str(driver['_id'])
+    
+    # Fetch wallet balance
+    wallet = await db.wallets.find_one({"user_id": driver_id})
+    driver['wallet_balance'] = wallet.get('balance', 0) if wallet else 0
+    
     return {"success": True, "driver": driver}
 
 @api_router.get("/admin/customers")
