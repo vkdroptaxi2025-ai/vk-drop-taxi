@@ -740,7 +740,7 @@ async def register_driver_simple(driver_data: SimpleDriverRegister):
 
 @api_router.get("/driver/{driver_id}/profile-complete")
 async def get_driver_profile_complete(driver_id: str):
-    """Get complete driver profile with all KYC details"""
+    """Get complete driver profile with all KYC details and wallet balance"""
     driver = await db.drivers.find_one({"driver_id": driver_id})
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -750,6 +750,10 @@ async def get_driver_profile_complete(driver_id: str):
     # Check expiries
     expiry_alerts = await check_all_driver_expiries(driver_id)
     driver['expiry_alerts'] = expiry_alerts
+    
+    # Fetch wallet balance
+    wallet = await db.wallets.find_one({"user_id": driver_id})
+    driver['wallet_balance'] = wallet.get('balance', 0) if wallet else 0
     
     return {"success": True, "driver": driver}
 
@@ -956,10 +960,14 @@ async def register_driver_clean(driver_data: CleanDriverRegister):
 
 @api_router.get("/driver/{driver_id}/status")
 async def get_driver_status(driver_id: str):
-    """Get driver approval and online status"""
+    """Get driver approval and online status with wallet balance"""
     driver = await db.drivers.find_one({"driver_id": driver_id})
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
+    
+    # Fetch wallet balance
+    wallet = await db.wallets.find_one({"user_id": driver_id})
+    wallet_balance = wallet.get('balance', 0) if wallet else 0
     
     return {
         "success": True,
@@ -967,7 +975,8 @@ async def get_driver_status(driver_id: str):
         "approval_status": driver.get("approval_status", "pending"),
         "rejection_reason": driver.get("rejection_reason"),
         "is_online": driver.get("is_online", False),
-        "duty_on": driver.get("duty_on", False)
+        "duty_on": driver.get("duty_on", False),
+        "wallet_balance": wallet_balance
     }
 
 # ==================== ADMIN KYC VERIFICATION ENDPOINTS ====================

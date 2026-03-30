@@ -64,12 +64,18 @@ export default function DriverDashboard() {
     try {
       console.log('[Driver] Fetching data for:', driverId);
       
-      // Get driver profile
+      // Get driver profile (now includes wallet_balance)
       const profileRes = await getDriverProfileComplete(driverId);
       const driver = profileRes.data.driver;
       console.log('[Driver] Profile loaded:', driver?.full_name);
+      console.log('[Driver] Wallet balance from profile:', driver?.wallet_balance);
       setDriverData(driver);
       setIsOnline(driver?.duty_on || driver?.is_online || false);
+      
+      // Set wallet balance from profile response (primary source)
+      const profileWalletBalance = driver?.wallet_balance || 0;
+      setWalletBalance(profileWalletBalance);
+      console.log('[Driver] Using wallet balance:', profileWalletBalance);
       
       // Update auth store with ONLY minimal data (no images/documents)
       // This prevents AsyncStorage quota exceeded error
@@ -83,16 +89,8 @@ export default function DriverDashboard() {
         vehicle_type: driver.vehicle_type || driver.vehicle_details?.vehicle_type,
         vehicle_number: driver.vehicle_number || driver.vehicle_details?.vehicle_number,
         earnings: driver.earnings || 0,
+        wallet_balance: profileWalletBalance,
       });
-
-      // Get wallet balance
-      try {
-        const walletRes = await getWallet(driverId);
-        setWalletBalance(walletRes.data.wallet?.balance || 0);
-      } catch (e) {
-        console.log('[Driver] Wallet fetch failed, using 0');
-        setWalletBalance(0);
-      }
 
       // Get rides
       try {
