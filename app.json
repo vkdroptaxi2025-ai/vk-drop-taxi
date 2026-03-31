@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "VK Drop Taxi",
+    "slug": "vk-drop-taxi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon-1024.png",
+    "scheme": "vkdroptaxi",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "icon": "./assets/images/icon-1024.png",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Upload driver and vehicle photos for verification",
+        "NSPhotoLibraryUsageDescription": "Select photos for driver registration"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
+        "backgroundColor": "#222222"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/icon-192.png",
+      "alias": {
+        "react-native-maps": "./web-mocks/react-native-maps.js",
+        "expo-image-picker": "./web-mocks/expo-image-picker.js",
+        "expo-location": "./web-mocks/expo-location.js"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-1242x2688.png",
+          "imageWidth": 400,
+          "resizeMode": "contain",
+          "backgroundColor": "#222222"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow VK Drop Taxi to access your photos for document upload",
+          "cameraPermission": "Allow VK Drop Taxi to take photos for verification"
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
